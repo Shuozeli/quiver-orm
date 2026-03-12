@@ -1,0 +1,21 @@
+[package]
+name = "quiver-migrate"
+version = "0.1.0"
+description = "Schema diffing, DDL generation, and migration tracking for Quiver ORM"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "migration", "ddl", "schema"]
+categories = ["database"]
+
+[dependencies]
+quiver-schema = { workspace = true }
+quiver-driver-core = { workspace = true }
+quiver-error = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+quiver-driver-sqlite = { workspace = true }
+tokio = { workspace = true }

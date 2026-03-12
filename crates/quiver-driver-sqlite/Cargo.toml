@@ -1,0 +1,26 @@
+[package]
+name = "quiver-driver-sqlite"
+version = "0.1.0"
+description = "SQLite driver for Quiver ORM with ADBC support"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "sqlite", "adbc"]
+categories = ["database"]
+
+[dependencies]
+quiver-driver-core = { workspace = true }
+quiver-error = { workspace = true }
+adbc = { workspace = true }
+adbc-sqlite = { workspace = true }
+arrow-array = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quiver-error = { workspace = true }
+quiver-schema = { workspace = true }
+quiver-codegen = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }

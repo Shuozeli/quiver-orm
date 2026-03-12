@@ -1,0 +1,70 @@
+[workspace]
+resolver = "2"
+exclude = ["arrow-adbc-rs"]
+members = [
+    "crates/quiver-schema",
+    "crates/quiver-codegen",
+    "crates/quiver-error",
+    "crates/quiver-cli",
+    "crates/quiver-e2e",
+    "crates/quiver-driver-core",
+    "crates/quiver-driver-sqlite",
+    "crates/quiver-driver-postgres",
+    "crates/quiver-driver-mysql",
+    "crates/quiver-query",
+    "crates/quiver-migrate",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/Shuozeli/quiver"
+homepage = "https://github.com/Shuozeli/quiver"
+
+[workspace.dependencies]
+# Internal
+quiver-schema = { path = "crates/quiver-schema" }
+quiver-codegen = { path = "crates/quiver-codegen" }
+quiver-error = { path = "crates/quiver-error" }
+quiver-driver-core = { path = "crates/quiver-driver-core" }
+quiver-driver-sqlite = { path = "crates/quiver-driver-sqlite" }
+quiver-driver-postgres = { path = "crates/quiver-driver-postgres" }
+quiver-driver-mysql = { path = "crates/quiver-driver-mysql" }
+quiver-query = { path = "crates/quiver-query" }
+quiver-migrate = { path = "crates/quiver-migrate" }
+
+# Encoding
+base64 = "0.22"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+
+# Arrow / ADBC (our own clean-room implementation, local submodule)
+adbc = { path = "arrow-adbc-rs/crates/adbc" }
+adbc-sqlite = { path = "arrow-adbc-rs/crates/adbc-sqlite" }
+adbc-postgres = { path = "arrow-adbc-rs/crates/adbc-postgres" }
+adbc-mysql = { path = "arrow-adbc-rs/crates/adbc-mysql" }
+arrow-array = "58"
+arrow-buffer = "58"
+arrow-schema = "58"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio-stream = "0.1"
+futures-core = "0.3"
+
+# Database (used directly by quiver-e2e for schema DDL tests)
+rusqlite = { version = "0.35", features = ["bundled"] }
+
+# Codegen backends (our own compilers)
+flatc-rs-compiler = { git = "https://github.com/Shuozeli/flatbuffers-rs.git" }
+flatc-rs-codegen = { git = "https://github.com/Shuozeli/flatbuffers-rs.git" }
+flatc-rs-schema = { git = "https://github.com/Shuozeli/flatbuffers-rs.git" }
+protoc-rs-analyzer = { git = "https://github.com/Shuozeli/protobuf-rs.git" }
+protoc-rs-codegen = { git = "https://github.com/Shuozeli/protobuf-rs.git" }
+protoc-rs-schema = { git = "https://github.com/Shuozeli/protobuf-rs.git" }

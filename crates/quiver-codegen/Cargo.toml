@@ -1,0 +1,25 @@
+[package]
+name = "quiver-codegen"
+version = "0.1.0"
+description = "Code generation for Quiver: FlatBuffers, Protobuf, Rust, TypeScript, SQL DDL"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "codegen", "flatbuffers", "protobuf"]
+categories = ["database", "development-tools"]
+
+[dependencies]
+quiver-schema = { workspace = true }
+quiver-error = { workspace = true }
+
+# FlatBuffers compiler
+flatc-rs-compiler = { workspace = true }
+flatc-rs-codegen = { workspace = true }
+flatc-rs-schema = { workspace = true }
+
+# Protobuf compiler
+protoc-rs-analyzer = { workspace = true }
+protoc-rs-codegen = { workspace = true }
+protoc-rs-schema = { workspace = true }

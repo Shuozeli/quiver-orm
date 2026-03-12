@@ -1,0 +1,43 @@
+config {
+    provider "postgresql"
+    database "myapp"
+}
+
+generate {
+    flatbuffers "./generated/fb"
+    protobuf "./generated/proto"
+}
+
+enum Role {
+    User
+    Admin
+    Moderator
+}
+
+model User {
+    id       Int32                         @id @autoincrement
+    email    Utf8                          @unique
+    name     Utf8?
+    balance  Decimal128(10, 2)             @default(0)
+    active   Boolean                      @default(true)
+    created  Timestamp(Microsecond, UTC)   @default(now())
+    tags     List<Utf8>                    @default([])
+    role     Role                          @default(User)
+
+    posts    Post[]                        @relation
+
+    @@index([email])
+    @@map("users")
+}
+
+model Post {
+    id        Int32    @id @autoincrement
+    title     Utf8
+    content   LargeUtf8?
+    published Boolean  @default(false)
+    views     UInt32   @default(0)
+    authorId  Int32
+    author    User     @relation(fields: [authorId], references: [id])
+
+    @@index([authorId])
+}

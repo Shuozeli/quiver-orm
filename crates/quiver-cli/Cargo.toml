@@ -1,0 +1,28 @@
+[package]
+name = "quiver-cli"
+version = "0.1.0"
+description = "CLI for the Quiver Arrow-native ORM: parse, generate, migrate, db operations"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "cli", "database"]
+categories = ["command-line-utilities", "database"]
+
+[[bin]]
+name = "quiver"
+path = "src/main.rs"
+
+[dependencies]
+quiver-schema = { workspace = true }
+quiver-codegen = { workspace = true }
+quiver-error = { workspace = true }
+quiver-migrate = { workspace = true }
+quiver-driver-core = { workspace = true }
+quiver-driver-sqlite = { workspace = true }
+quiver-driver-postgres = { workspace = true }
+quiver-driver-mysql = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }

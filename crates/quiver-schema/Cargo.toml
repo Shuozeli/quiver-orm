@@ -1,0 +1,17 @@
+[package]
+name = "quiver-schema"
+version = "0.1.0"
+description = "Schema parser, AST, and validation for the Quiver Arrow-native ORM"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "schema", "parser"]
+categories = ["database", "parser-implementations"]
+
+[dependencies]
+quiver-error = { workspace = true }
+arrow-schema = { workspace = true }
+
+[dev-dependencies]

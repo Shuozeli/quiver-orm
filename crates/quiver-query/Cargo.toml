@@ -1,0 +1,25 @@
+[package]
+name = "quiver-query"
+version = "0.1.0"
+description = "Type-safe SQL query builder with compile-time injection prevention for Quiver ORM"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "sql", "query-builder"]
+categories = ["database"]
+
+[dependencies]
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+base64 = { workspace = true }
+quiver-driver-core = { workspace = true }
+quiver-error = { workspace = true }
+quiver-schema = { workspace = true }
+
+[dev-dependencies]
+quiver-schema = { workspace = true }
+quiver-codegen = { workspace = true }
+quiver-driver-sqlite = { workspace = true }
+tokio = { workspace = true }

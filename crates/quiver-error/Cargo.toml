@@ -1,0 +1,14 @@
+[package]
+name = "quiver-error"
+version = "0.1.0"
+description = "Shared error types for the Quiver Arrow-native ORM"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "error"]
+categories = ["database"]
+
+[dependencies]
+thiserror = { workspace = true }

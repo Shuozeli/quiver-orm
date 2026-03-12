@@ -1,0 +1,22 @@
+[package]
+name = "quiver-driver-core"
+version = "0.1.0"
+description = "Database driver traits, Value/Row types, and Arrow conversion for Quiver ORM"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["orm", "arrow", "database", "adbc", "driver"]
+categories = ["database"]
+
+[dependencies]
+quiver-error = { workspace = true }
+adbc = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures-core = { workspace = true }
