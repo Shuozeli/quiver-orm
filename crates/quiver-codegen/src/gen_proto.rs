@@ -55,9 +55,6 @@ fn gen_message(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("message {} {{\n", m.name));
     let mut field_num = 1;
     for f in &m.fields {
-        if is_relation_field(f) && !is_scalar_field(f) {
-            continue;
-        }
         let proto_type = type_to_proto(&f.type_expr);
         out.push_str(&format!(
             "  {} {} = {};\n",
@@ -74,7 +71,7 @@ fn gen_create_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("message {}CreateInput {{\n", m.name));
     let mut field_num = 1;
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_field(f) {
+        if is_auto_field(f) {
             continue;
         }
         let proto_type = if is_collection_type(&f.type_expr.base) {
@@ -100,7 +97,7 @@ fn gen_update_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("message {}UpdateInput {{\n", m.name));
     let mut field_num = 1;
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_field(f) {
+        if is_auto_field(f) {
             continue;
         }
         if is_collection_type(&f.type_expr.base) {
@@ -218,17 +215,6 @@ fn is_auto_field(f: &FieldDef) -> bool {
         .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
 }
 
-fn is_relation_field(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
-fn is_scalar_field(f: &FieldDef) -> bool {
-    // A scalar FK field (like authorId) has no @relation attribute
-    !is_relation_field(f)
-}
-
 fn has_default(f: &FieldDef) -> bool {
     f.attributes
         .iter()
@@ -260,10 +246,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -283,7 +269,7 @@ mod tests {
             r#"
             enum Role { User Admin Moderator }
             model Account {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role Role
             }
         "#,
@@ -302,10 +288,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
+                id    Int32  PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -322,7 +308,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
                 name  Utf8?
             }
@@ -340,8 +326,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id
-                email Utf8  @unique
+                id    Int32 PRIMARY KEY
+                email Utf8  UNIQUE
                 name  Utf8
             }
         "#,
@@ -359,7 +345,7 @@ mod tests {
         let schema = parse(
             r#"
             model Doc {
-                id       Int32 @id
+                id       Int32 PRIMARY KEY
                 metadata Map<Utf8, Utf8>
             }
         "#,
@@ -374,7 +360,7 @@ mod tests {
         let schema = parse(
             r#"
             model Doc {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 tags List<Utf8>
             }
         "#,
@@ -389,7 +375,7 @@ mod tests {
         let schema = parse(
             r#"
             model Event {
-                id      Int32 @id
+                id      Int32 PRIMARY KEY
                 created Timestamp(Microsecond, UTC)
                 day     Date32
                 time    Time64(Nanosecond)

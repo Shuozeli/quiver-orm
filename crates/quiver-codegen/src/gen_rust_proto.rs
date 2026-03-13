@@ -54,11 +54,11 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
                 age   Int16
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -81,8 +81,8 @@ mod tests {
             r#"
             enum Role { User Admin Moderator }
             model Account {
-                id   Int32 @id
-                role Role  @default(Admin)
+                id   Int32 PRIMARY KEY
+                role Role  DEFAULT Admin
             }
         "#,
         )
@@ -99,7 +99,7 @@ mod tests {
         let schema = parse(
             r#"
             model Doc {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 tags List<Utf8>
             }
         "#,
@@ -116,7 +116,7 @@ mod tests {
         let schema = parse(
             r#"
             model Event {
-                id      Int32 @id
+                id      Int32 PRIMARY KEY
                 created Timestamp(Microsecond, UTC)
                 day     Date32
             }
@@ -134,7 +134,7 @@ mod tests {
         let schema = parse(
             r#"
             model Item {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -151,7 +151,7 @@ mod tests {
         let schema = parse(
             r#"
             model Foo {
-                id Int32 @id
+                id Int32 PRIMARY KEY
             }
         "#,
         )

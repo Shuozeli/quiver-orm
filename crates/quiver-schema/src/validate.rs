@@ -106,48 +106,36 @@ fn check_relation_references(schema: &Schema, errors: &mut Vec<QuiverError>) {
         schema.models.iter().map(|m| m.name.as_str()).collect();
 
     for m in &schema.models {
-        for f in &m.fields {
-            for attr in &f.attributes {
-                if let FieldAttribute::Relation {
-                    fields, references, ..
-                } = attr
-                {
-                    // Check that FK fields exist in this model
-                    for fk in fields {
-                        if !m.fields.iter().any(|mf| mf.name == *fk) {
-                            errors.push(QuiverError::Validation(format!(
-                                "relation field '{}' in model '{}': FK field '{}' does not exist",
-                                f.name, m.name, fk
-                            )));
-                        }
-                    }
-                    // Check that the referenced model exists
-                    let target = match &f.type_expr.base {
-                        BaseType::Named(n) => Some(n.as_str()),
-                        BaseType::List(inner) => {
-                            if let BaseType::Named(n) = &inner.base {
-                                Some(n.as_str())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
-                    if let Some(target) = target {
-                        if !model_names.contains(target) {
-                            errors.push(QuiverError::Validation(format!(
-                                "relation '{}' in model '{}': target model '{}' not found",
-                                f.name, m.name, target
-                            )));
-                        }
-                    }
-                    // Check field count matches reference count
-                    if fields.len() != references.len() {
+        for attr in &m.attributes {
+            if let ModelAttribute::ForeignKey {
+                fields,
+                references_model,
+                references_columns,
+                ..
+            } = attr
+            {
+                // Check that FK fields exist in this model
+                for fk in fields {
+                    if !m.fields.iter().any(|mf| mf.name == *fk) {
                         errors.push(QuiverError::Validation(format!(
-                            "relation '{}' in model '{}': fields and references must have same length",
-                            f.name, m.name
+                            "FOREIGN KEY in model '{}': field '{}' does not exist",
+                            m.name, fk
                         )));
                     }
+                }
+                // Check that the referenced model exists
+                if !model_names.contains(references_model.as_str()) {
+                    errors.push(QuiverError::Validation(format!(
+                        "FOREIGN KEY in model '{}': referenced model '{}' not found",
+                        m.name, references_model
+                    )));
+                }
+                // Check field count matches reference count
+                if fields.len() != references_columns.len() {
+                    errors.push(QuiverError::Validation(format!(
+                        "FOREIGN KEY in model '{}': fields and references must have same length",
+                        m.name
+                    )));
                 }
             }
         }
@@ -191,8 +179,8 @@ fn check_relation_fields(schema: &Schema, errors: &mut Vec<QuiverError>) {
     for m in &schema.models {
         for attr in &m.attributes {
             let (kind, fields) = match attr {
-                ModelAttribute::Index(f) => ("@@index", f),
-                ModelAttribute::Unique(f) => ("@@unique", f),
+                ModelAttribute::Index(f) => ("INDEX", f),
+                ModelAttribute::Unique(f) => ("UNIQUE", f),
                 _ => continue,
             };
             for f in fields {
@@ -268,7 +256,7 @@ mod tests {
             r#"
             enum Role { User Admin }
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role Role
             }
         "#,
@@ -281,8 +269,8 @@ mod tests {
     fn duplicate_model_name() {
         let schema = parse(
             r#"
-            model User { id Int32 @id }
-            model User { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
+            model User { id Int32 PRIMARY KEY }
         "#,
         )
         .unwrap();
@@ -298,7 +286,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role UnknownEnum
             }
         "#,
@@ -312,13 +300,14 @@ mod tests {
     }
 
     #[test]
-    fn relation_fk_field_missing() {
+    fn foreign_key_field_missing() {
         let schema = parse(
             r#"
-            model User { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
             model Post {
-                id       Int32 @id
-                author   User  @relation(fields: [authorId], references: [id])
+                id       Int32 PRIMARY KEY
+
+                FOREIGN KEY (authorId) REFERENCES User (id)
             }
         "#,
         )
@@ -326,7 +315,7 @@ mod tests {
         let errs = validate(&schema).unwrap_err();
         assert!(
             errs.iter()
-                .any(|e| format!("{e}").contains("FK field 'authorId' does not exist"))
+                .any(|e| format!("{e}").contains("field 'authorId' does not exist"))
         );
     }
 
@@ -336,7 +325,7 @@ mod tests {
             r#"
             model Pair {
                 a Int32
-                @@id([a, b])
+                PRIMARY KEY (a, b)
             }
         "#,
         )
@@ -353,7 +342,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id Int32 @id
+                id Int32 PRIMARY KEY
                 id Utf8
             }
         "#,
@@ -371,8 +360,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id Int32 @id
-                @@index([nonexistent])
+                id Int32 PRIMARY KEY
+                INDEX (nonexistent)
             }
         "#,
         )

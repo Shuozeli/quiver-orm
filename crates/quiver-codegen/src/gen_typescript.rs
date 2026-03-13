@@ -55,9 +55,6 @@ fn gen_enum(out: &mut String, e: &EnumDef) {
 fn gen_model_interface(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {} {{\n", m.name));
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
         let ts_type = base_type_to_ts(&f.type_expr, schema);
         if f.type_expr.nullable {
             out.push_str(&format!("  {}: {} | null;\n", f.name, ts_type));
@@ -75,7 +72,7 @@ fn gen_model_interface(out: &mut String, m: &ModelDef, schema: &Schema) {
 fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {}CreateInput {{\n", m.name));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let ts_type = base_type_to_ts(&f.type_expr, schema);
@@ -95,7 +92,7 @@ fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
 fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {}UpdateInput {{\n", m.name));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let ts_type = base_type_to_ts(&f.type_expr, schema);
@@ -115,9 +112,6 @@ fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
 fn gen_where_unique_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {}WhereUniqueInput {{\n", m.name));
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
         if !is_id_field(f) && !is_unique_field(f) {
             continue;
         }
@@ -138,9 +132,6 @@ fn gen_where_unique_input(out: &mut String, m: &ModelDef, schema: &Schema) {
 fn gen_field_constants(out: &mut String, m: &ModelDef, _schema: &Schema) {
     out.push_str(&format!("export const {}Fields = {{\n", m.name));
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
         out.push_str(&format!("  {}: \"{}\",\n", f.name, f.name));
     }
     out.push_str("} as const;\n\n");
@@ -230,12 +221,6 @@ fn is_auto_field(f: &FieldDef) -> bool {
         .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
 }
 
-fn is_relation_object(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
 fn has_default(f: &FieldDef) -> bool {
     f.attributes
         .iter()
@@ -266,8 +251,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
                 age   Int32
             }
@@ -293,7 +278,7 @@ mod tests {
                 Moderator
             }
             model Account {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role Role
             }
         "#,
@@ -314,10 +299,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
-                score Int32  @default(0)
+                score Int32  DEFAULT 0
             }
         "#,
         )
@@ -342,8 +327,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
                 age   Int32
             }
@@ -367,7 +352,7 @@ mod tests {
         let schema = parse(
             r#"
             model Post {
-                id      Int32  @id @autoincrement
+                id      Int32  PRIMARY KEY AUTOINCREMENT
                 title   Utf8
                 content Utf8?
                 rating  Float64?
@@ -389,10 +374,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8
-                code  Utf8   @unique
+                code  Utf8   UNIQUE
             }
         "#,
         )
@@ -412,8 +397,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
             }
         "#,
@@ -433,13 +418,12 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                posts Post[] @relation
+                id    Int32  PRIMARY KEY AUTOINCREMENT
             }
             model Post {
-                id       Int32 @id @autoincrement
+                id       Int32 PRIMARY KEY AUTOINCREMENT
                 authorId Int32
-                author   User  @relation(fields: [authorId], references: [id])
+                FOREIGN KEY (authorId) REFERENCES User (id)
             }
         "#,
         )
@@ -463,7 +447,7 @@ mod tests {
         let schema = parse(
             r#"
             model Record {
-                id    Int32  @id
+                id    Int32  PRIMARY KEY
                 big   Int64
                 ubig  UInt64
                 data  Binary

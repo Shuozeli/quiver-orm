@@ -169,22 +169,14 @@ impl std::fmt::Display for ReferentialAction {
     }
 }
 
-/// Field-level attribute.
+/// Field-level constraint (inline after type expression).
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldAttribute {
     Id,
     Autoincrement,
     Unique,
-    UpdatedAt,
-    Ignore,
     Default(DefaultValue),
     Map(String),
-    Relation {
-        fields: Vec<String>,
-        references: Vec<String>,
-        on_delete: Option<ReferentialAction>,
-        on_update: Option<ReferentialAction>,
-    },
 }
 
 /// Default value expression.
@@ -202,13 +194,20 @@ pub enum DefaultValue {
     EnumVariant(String),
 }
 
-/// Model-level attribute (@@).
+/// Model-level constraint (table-level declarations in model body).
 #[derive(Debug, Clone)]
 pub enum ModelAttribute {
     Id(Vec<String>),
     Unique(Vec<String>),
     Index(Vec<String>),
     Map(String),
+    ForeignKey {
+        fields: Vec<String>,
+        references_model: String,
+        references_columns: Vec<String>,
+        on_delete: Option<ReferentialAction>,
+        on_update: Option<ReferentialAction>,
+    },
 }
 
 /// Source position for error reporting.

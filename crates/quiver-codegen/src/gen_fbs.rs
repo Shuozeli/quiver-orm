@@ -48,9 +48,6 @@ fn gen_enum(out: &mut String, e: &EnumDef) {
 fn gen_table(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("table {} {{\n", m.name));
     for f in &m.fields {
-        if is_relation_field(f) && !is_scalar_fk(f) {
-            continue; // skip relation object fields (Post[], User, etc.)
-        }
         let fbs_type = type_to_fbs(&f.type_expr);
         let required = if !f.type_expr.nullable && is_required_fbs_type(&f.type_expr.base) {
             " (required)"
@@ -70,7 +67,7 @@ fn gen_table(out: &mut String, m: &ModelDef) {
 fn gen_create_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("table {}CreateInput {{\n", m.name));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_field(f) {
+        if is_auto_field(f) {
             continue;
         }
         let fbs_type = type_to_fbs(&f.type_expr);
@@ -91,7 +88,7 @@ fn gen_create_input(out: &mut String, m: &ModelDef) {
 fn gen_update_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("table {}UpdateInput {{\n", m.name));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_field(f) {
+        if is_auto_field(f) {
             continue;
         }
         // All fields optional in update (FBS table fields are optional by default)
@@ -175,18 +172,6 @@ fn is_auto_field(f: &FieldDef) -> bool {
         .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
 }
 
-fn is_relation_field(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
-fn is_scalar_fk(_f: &FieldDef) -> bool {
-    // A field is a scalar FK if it has no @relation attribute
-    // (the FK column like authorId is a plain scalar, not a relation)
-    false
-}
-
 fn has_default(f: &FieldDef) -> bool {
     f.attributes
         .iter()
@@ -218,11 +203,11 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
                 age   Int16
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -242,8 +227,8 @@ mod tests {
             r#"
             enum Role { User Admin Moderator }
             model Account {
-                id   Int32 @id
-                role Role  @default(Admin)
+                id   Int32 PRIMARY KEY
+                role Role  DEFAULT Admin
             }
         "#,
         )
@@ -260,7 +245,7 @@ mod tests {
         let schema = parse(
             r#"
             model Event {
-                id      Int32 @id
+                id      Int32 PRIMARY KEY
                 created Timestamp(Microsecond, UTC)
                 day     Date32
             }
@@ -277,7 +262,7 @@ mod tests {
         let schema = parse(
             r#"
             model Doc {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 tags List<Utf8>
             }
         "#,
@@ -292,10 +277,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
+                id    Int32  PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )

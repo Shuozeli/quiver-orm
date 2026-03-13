@@ -28,7 +28,7 @@ impl<'a> SchemaValidator<'a> {
         Self { schema }
     }
 
-    /// Find a model by table name (checking both the model name and @@map).
+    /// Find a model by table name (checking both the model name and MAP).
     pub fn find_model(&self, table: &str) -> Result<&'a ModelDef, QuiverError> {
         self.schema
             .models
@@ -48,7 +48,7 @@ impl<'a> SchemaValidator<'a> {
             })
     }
 
-    /// Validate that a field name exists on a model (checking both name and @map).
+    /// Validate that a field name exists on a model (checking both name and MAP).
     pub fn find_field<'m>(
         &self,
         model: &'m ModelDef,
@@ -59,12 +59,7 @@ impl<'a> SchemaValidator<'a> {
             .iter()
             .find(|f| column_name_for(f) == field_name || f.name == field_name)
             .ok_or_else(|| {
-                let available: Vec<String> = model
-                    .fields
-                    .iter()
-                    .filter(|f| !is_relation_object(f))
-                    .map(column_name_for)
-                    .collect();
+                let available: Vec<String> = model.fields.iter().map(column_name_for).collect();
                 QuiverError::Validation(format!(
                     "unknown field '{}' on model '{}'; available fields: {}",
                     field_name,
@@ -296,12 +291,6 @@ fn column_name_for(f: &FieldDef) -> String {
     f.name.clone()
 }
 
-fn is_relation_object(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,9 +301,9 @@ mod tests {
         parse(
             r#"
             model User {
-                id    Int32 @id @autoincrement
+                id    Int32 PRIMARY KEY AUTOINCREMENT
                 name  Utf8
-                email Utf8  @unique
+                email Utf8  UNIQUE
                 age   Int32?
             }
         "#,
@@ -326,9 +315,9 @@ mod tests {
         parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 name  Utf8
-                @@map("users")
+                MAP "users"
             }
         "#,
         )

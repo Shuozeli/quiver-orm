@@ -24,15 +24,15 @@ homepage = "https://github.com/Shuozeli/quiver"
 
 [workspace.dependencies]
 # Internal
-quiver-schema = { path = "crates/quiver-schema" }
-quiver-codegen = { path = "crates/quiver-codegen" }
-quiver-error = { path = "crates/quiver-error" }
-quiver-driver-core = { path = "crates/quiver-driver-core" }
-quiver-driver-sqlite = { path = "crates/quiver-driver-sqlite" }
-quiver-driver-postgres = { path = "crates/quiver-driver-postgres" }
-quiver-driver-mysql = { path = "crates/quiver-driver-mysql" }
-quiver-query = { path = "crates/quiver-query" }
-quiver-migrate = { path = "crates/quiver-migrate" }
+quiver-schema = { version = "0.1.0", path = "crates/quiver-schema" }
+quiver-codegen = { version = "0.1.0", path = "crates/quiver-codegen" }
+quiver-error = { version = "0.1.0", path = "crates/quiver-error" }
+quiver-driver-core = { version = "0.1.0", path = "crates/quiver-driver-core" }
+quiver-driver-sqlite = { version = "0.1.0", path = "crates/quiver-driver-sqlite" }
+quiver-driver-postgres = { version = "0.1.0", path = "crates/quiver-driver-postgres" }
+quiver-driver-mysql = { version = "0.1.0", path = "crates/quiver-driver-mysql" }
+quiver-query = { version = "0.1.0", path = "crates/quiver-query" }
+quiver-migrate = { version = "0.1.0", path = "crates/quiver-migrate" }
 
 # Encoding
 base64 = "0.22"
@@ -45,10 +45,10 @@ serde_json = "1"
 thiserror = "2"
 
 # Arrow / ADBC (our own clean-room implementation, local submodule)
-adbc = { path = "arrow-adbc-rs/crates/adbc" }
-adbc-sqlite = { path = "arrow-adbc-rs/crates/adbc-sqlite" }
-adbc-postgres = { path = "arrow-adbc-rs/crates/adbc-postgres" }
-adbc-mysql = { path = "arrow-adbc-rs/crates/adbc-mysql" }
+adbc = { version = "0.2.0", path = "arrow-adbc-rs/crates/adbc" }
+adbc-sqlite = { version = "0.2.0", path = "arrow-adbc-rs/crates/adbc-sqlite" }
+adbc-postgres = { version = "0.2.0", path = "arrow-adbc-rs/crates/adbc-postgres" }
+adbc-mysql = { version = "0.2.0", path = "arrow-adbc-rs/crates/adbc-mysql" }
 arrow-array = "58"
 arrow-buffer = "58"
 arrow-schema = "58"
@@ -62,9 +62,9 @@ futures-core = "0.3"
 rusqlite = { version = "0.35", features = ["bundled"] }
 
 # Codegen backends (our own compilers)
-flatc-rs-compiler = { git = "https://github.com/Shuozeli/flatbuffers-rs.git" }
-flatc-rs-codegen = { git = "https://github.com/Shuozeli/flatbuffers-rs.git" }
-flatc-rs-schema = { git = "https://github.com/Shuozeli/flatbuffers-rs.git" }
-protoc-rs-analyzer = { git = "https://github.com/Shuozeli/protobuf-rs.git" }
-protoc-rs-codegen = { git = "https://github.com/Shuozeli/protobuf-rs.git" }
-protoc-rs-schema = { git = "https://github.com/Shuozeli/protobuf-rs.git" }
+flatc-rs-compiler = { git = "https://github.com/Shuozeli/flatbuffers-rs.git", rev = "879e555ab2f1f78cda1654057cafe31396ce5014" }
+flatc-rs-codegen = { git = "https://github.com/Shuozeli/flatbuffers-rs.git", rev = "879e555ab2f1f78cda1654057cafe31396ce5014" }
+flatc-rs-schema = { git = "https://github.com/Shuozeli/flatbuffers-rs.git", rev = "879e555ab2f1f78cda1654057cafe31396ce5014" }
+protoc-rs-analyzer = { git = "https://github.com/Shuozeli/protobuf-rs.git", rev = "52eed1ccc54fab71821899e81e719da5e7a89491" }
+protoc-rs-codegen = { git = "https://github.com/Shuozeli/protobuf-rs.git", rev = "52eed1ccc54fab71821899e81e719da5e7a89491" }
+protoc-rs-schema = { git = "https://github.com/Shuozeli/protobuf-rs.git", rev = "52eed1ccc54fab71821899e81e719da5e7a89491" }

@@ -1,6 +1,6 @@
 //! Migration step types -- the atomic operations that make up a migration.
 
-use quiver_schema::ast::{FieldAttribute, FieldDef, ModelDef};
+use quiver_schema::ast::{FieldDef, ModelDef};
 use serde::{Deserialize, Serialize};
 
 use crate::sql_gen::TrustedSql;
@@ -38,13 +38,6 @@ pub enum MigrationStep {
     AddEnumValue { enum_name: String, value: String },
     /// Remove a value from an existing enum.
     RemoveEnumValue { enum_name: String, value: String },
-}
-
-/// Returns true if this field represents a relation object (has `@relation` attribute).
-pub fn is_relation_object(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
 }
 
 /// A complete migration with metadata.

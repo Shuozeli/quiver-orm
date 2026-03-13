@@ -54,49 +54,29 @@ async fn introspect_sqlite(conn: &dyn DynConnection) -> Result<Schema, QuiverErr
         models.push(model);
     }
 
-    // Second pass: add relation attributes based on foreign keys
-    let model_names: Vec<String> = models.iter().map(|m| m.name.clone()).collect();
-    for i in 0..models.len() {
-        let fks = list_sqlite_foreign_keys(conn, &models[i].name).await?;
-        for fk in &fks {
-            // Add @relation to the FK field
-            if let Some(field) = models[i].fields.iter_mut().find(|f| f.name == fk.from_col) {
-                field.attributes.push(FieldAttribute::Relation {
-                    fields: vec![fk.from_col.clone()],
-                    references: vec![fk.to_col.clone()],
-                    on_delete: None,
-                    on_update: None,
-                });
-            }
-
-            // Find the referenced model and add a reverse relation (array field)
-            if let Some(ref_idx) = model_names.iter().position(|n| *n == fk.to_table) {
-                let child_model_name = models[i].name.clone();
-                let has_reverse = models[ref_idx].fields.iter().any(
-                    |f| matches!(&f.type_expr.base, BaseType::Named(n) if *n == child_model_name),
-                );
-                if !has_reverse {
-                    models[ref_idx].fields.push(FieldDef {
-                        name: pluralize(&child_model_name),
-                        type_expr: TypeExpr {
-                            base: BaseType::List(Box::new(TypeExpr {
-                                base: BaseType::Named(child_model_name),
-                                nullable: false,
-                                span: Span { line: 0, column: 0 },
-                            })),
-                            nullable: false,
-                            span: Span { line: 0, column: 0 },
-                        },
-                        attributes: vec![FieldAttribute::Relation {
-                            fields: vec![],
-                            references: vec![],
-                            on_delete: None,
-                            on_update: None,
-                        }],
-                        span: Span { line: 0, column: 0 },
-                    });
+    // Second pass: add FOREIGN KEY model attributes based on foreign keys
+    for model in &mut models {
+        let table_name = model
+            .attributes
+            .iter()
+            .find_map(|a| {
+                if let ModelAttribute::Map(name) = a {
+                    Some(name.clone())
+                } else {
+                    None
                 }
-            }
+            })
+            .unwrap_or_else(|| model.name.clone());
+        let fks = list_sqlite_foreign_keys(conn, &table_name).await?;
+        for fk in &fks {
+            let references_model = to_pascal_case(&fk.to_table);
+            model.attributes.push(ModelAttribute::ForeignKey {
+                fields: vec![fk.from_col.clone()],
+                references_model,
+                references_columns: vec![fk.to_col.clone()],
+                on_delete: None,
+                on_update: None,
+            });
         }
     }
 
@@ -151,7 +131,7 @@ async fn introspect_sqlite_table(
         }
 
         // Map attribute if table name differs from model name
-        // (field-level @map not needed unless column name differs)
+        // (field-level MAP not needed unless column name differs)
 
         fields.push(FieldDef {
             name: col.name.clone(),
@@ -165,7 +145,7 @@ async fn introspect_sqlite_table(
         });
     }
 
-    // Composite PK -> @@id attribute
+    // Composite PK -> PRIMARY KEY (fields) attribute
     if is_composite_pk {
         model_attrs.push(ModelAttribute::Id(pk_columns));
     }
@@ -177,7 +157,7 @@ async fn introspect_sqlite_table(
         }
     }
 
-    // @@map if table name looks like it was mapped (lowercase/plural vs PascalCase)
+    // MAP if table name looks like it was mapped (lowercase/plural vs PascalCase)
     let model_name = to_pascal_case(table_name);
     if model_name != table_name {
         model_attrs.push(ModelAttribute::Map(table_name.to_string()));
@@ -229,51 +209,19 @@ async fn introspect_postgres(conn: &dyn DynConnection) -> Result<Schema, QuiverE
         models.push(model);
     }
 
-    // Second pass: add relation attributes based on foreign keys
-    let model_names: Vec<String> = models.iter().map(|m| m.name.clone()).collect();
-    for i in 0..models.len() {
-        let table_name = pg_table_name_for(&models[i]);
+    // Second pass: add FOREIGN KEY model attributes based on foreign keys
+    for model in &mut models {
+        let table_name = pg_table_name_for(model);
         let fks = list_pg_foreign_keys(conn, &table_name).await?;
         for fk in &fks {
-            if let Some(field) = models[i].fields.iter_mut().find(|f| f.name == fk.from_col) {
-                field.attributes.push(FieldAttribute::Relation {
-                    fields: vec![fk.from_col.clone()],
-                    references: vec![fk.to_col.clone()],
-                    on_delete: None,
-                    on_update: None,
-                });
-            }
-
-            if let Some(ref_idx) = model_names
-                .iter()
-                .position(|n| *n == to_pascal_case(&fk.to_table))
-            {
-                let child_model_name = models[i].name.clone();
-                let has_reverse = models[ref_idx].fields.iter().any(
-                    |f| matches!(&f.type_expr.base, BaseType::Named(n) if *n == child_model_name),
-                );
-                if !has_reverse {
-                    models[ref_idx].fields.push(FieldDef {
-                        name: pluralize(&child_model_name),
-                        type_expr: TypeExpr {
-                            base: BaseType::List(Box::new(TypeExpr {
-                                base: BaseType::Named(child_model_name),
-                                nullable: false,
-                                span: Span { line: 0, column: 0 },
-                            })),
-                            nullable: false,
-                            span: Span { line: 0, column: 0 },
-                        },
-                        attributes: vec![FieldAttribute::Relation {
-                            fields: vec![],
-                            references: vec![],
-                            on_delete: None,
-                            on_update: None,
-                        }],
-                        span: Span { line: 0, column: 0 },
-                    });
-                }
-            }
+            let references_model = to_pascal_case(&fk.to_table);
+            model.attributes.push(ModelAttribute::ForeignKey {
+                fields: vec![fk.from_col.clone()],
+                references_model,
+                references_columns: vec![fk.to_col.clone()],
+                on_delete: None,
+                on_update: None,
+            });
         }
     }
 
@@ -661,7 +609,7 @@ fn parse_pg_default(default: &str) -> Option<DefaultValue> {
     None
 }
 
-/// Get the SQL table name for a model (check @@map attribute).
+/// Get the SQL table name for a model (check MAP attribute).
 fn pg_table_name_for(model: &ModelDef) -> String {
     for attr in &model.attributes {
         if let ModelAttribute::Map(name) = attr {
@@ -693,51 +641,19 @@ async fn introspect_mysql(conn: &dyn DynConnection) -> Result<Schema, QuiverErro
         models.push(model);
     }
 
-    // Second pass: add relation attributes based on foreign keys
-    let model_names: Vec<String> = models.iter().map(|m| m.name.clone()).collect();
-    for i in 0..models.len() {
-        let table_name = mysql_table_name_for(&models[i]);
+    // Second pass: add FOREIGN KEY model attributes based on foreign keys
+    for model in &mut models {
+        let table_name = mysql_table_name_for(model);
         let fks = list_mysql_foreign_keys(conn, &table_name).await?;
         for fk in &fks {
-            if let Some(field) = models[i].fields.iter_mut().find(|f| f.name == fk.from_col) {
-                field.attributes.push(FieldAttribute::Relation {
-                    fields: vec![fk.from_col.clone()],
-                    references: vec![fk.to_col.clone()],
-                    on_delete: None,
-                    on_update: None,
-                });
-            }
-
-            if let Some(ref_idx) = model_names
-                .iter()
-                .position(|n| *n == to_pascal_case(&fk.to_table))
-            {
-                let child_model_name = models[i].name.clone();
-                let has_reverse = models[ref_idx].fields.iter().any(
-                    |f| matches!(&f.type_expr.base, BaseType::Named(n) if *n == child_model_name),
-                );
-                if !has_reverse {
-                    models[ref_idx].fields.push(FieldDef {
-                        name: pluralize(&child_model_name),
-                        type_expr: TypeExpr {
-                            base: BaseType::List(Box::new(TypeExpr {
-                                base: BaseType::Named(child_model_name),
-                                nullable: false,
-                                span: Span { line: 0, column: 0 },
-                            })),
-                            nullable: false,
-                            span: Span { line: 0, column: 0 },
-                        },
-                        attributes: vec![FieldAttribute::Relation {
-                            fields: vec![],
-                            references: vec![],
-                            on_delete: None,
-                            on_update: None,
-                        }],
-                        span: Span { line: 0, column: 0 },
-                    });
-                }
-            }
+            let references_model = to_pascal_case(&fk.to_table);
+            model.attributes.push(ModelAttribute::ForeignKey {
+                fields: vec![fk.from_col.clone()],
+                references_model,
+                references_columns: vec![fk.to_col.clone()],
+                on_delete: None,
+                on_update: None,
+            });
         }
     }
 
@@ -1160,7 +1076,7 @@ fn parse_mysql_default(default: &str) -> Option<DefaultValue> {
     Some(DefaultValue::String(trimmed.to_string()))
 }
 
-/// Get the SQL table name for a MySQL model (check @@map attribute).
+/// Get the SQL table name for a MySQL model (check MAP attribute).
 fn mysql_table_name_for(model: &ModelDef) -> String {
     for attr in &model.attributes {
         if let ModelAttribute::Map(name) = attr {
@@ -1321,7 +1237,7 @@ async fn sqlite_unique_columns(
         let col_stmt = Statement::sql(format!("PRAGMA index_info(\"{}\")", idx_name));
         let col_rows = conn.dyn_query(&col_stmt).await?;
 
-        // Only mark as @unique if single-column unique index
+        // Only mark as UNIQUE if single-column unique index
         if col_rows.len() == 1 {
             unique_cols.push(text_at(&col_rows[0], 2));
         }
@@ -1483,6 +1399,7 @@ fn to_pascal_case(s: &str) -> String {
     result
 }
 
+#[cfg(test)]
 fn pluralize(name: &str) -> String {
     let lower = name.to_lowercase();
     if lower.ends_with('s') {
@@ -1522,16 +1439,38 @@ pub fn schema_to_quiver(schema: &Schema) -> String {
         for attr in &m.attributes {
             match attr {
                 ModelAttribute::Map(name) => {
-                    out.push_str(&format!("    @@map(\"{}\")\n", name));
+                    out.push_str(&format!("    MAP \"{}\"\n", name));
                 }
                 ModelAttribute::Id(fields) => {
-                    out.push_str(&format!("    @@id([{}])\n", fields.join(", ")));
+                    out.push_str(&format!("    PRIMARY KEY ({})\n", fields.join(", ")));
                 }
                 ModelAttribute::Index(fields) => {
-                    out.push_str(&format!("    @@index([{}])\n", fields.join(", ")));
+                    out.push_str(&format!("    INDEX ({})\n", fields.join(", ")));
                 }
                 ModelAttribute::Unique(fields) => {
-                    out.push_str(&format!("    @@unique([{}])\n", fields.join(", ")));
+                    out.push_str(&format!("    UNIQUE ({})\n", fields.join(", ")));
+                }
+                ModelAttribute::ForeignKey {
+                    fields,
+                    references_model,
+                    references_columns,
+                    on_delete,
+                    on_update,
+                } => {
+                    let mut fk_str = format!(
+                        "    FOREIGN KEY ({}) REFERENCES {} ({})",
+                        fields.join(", "),
+                        references_model,
+                        references_columns.join(", "),
+                    );
+                    if let Some(action) = on_delete {
+                        fk_str.push_str(&format!(" ON DELETE {}", action));
+                    }
+                    if let Some(action) = on_update {
+                        fk_str.push_str(&format!(" ON UPDATE {}", action));
+                    }
+                    fk_str.push('\n');
+                    out.push_str(&fk_str);
                 }
             }
         }
@@ -1620,26 +1559,11 @@ fn format_field_attrs(attrs: &[FieldAttribute]) -> String {
     let parts: Vec<String> = attrs
         .iter()
         .map(|a| match a {
-            FieldAttribute::Id => "@id".to_string(),
-            FieldAttribute::Autoincrement => "@autoincrement".to_string(),
-            FieldAttribute::Unique => "@unique".to_string(),
-            FieldAttribute::UpdatedAt => "@updatedAt".to_string(),
-            FieldAttribute::Ignore => "@ignore".to_string(),
-            FieldAttribute::Map(name) => format!("@map(\"{}\")", name),
-            FieldAttribute::Default(dv) => format!("@default({})", format_default(dv)),
-            FieldAttribute::Relation {
-                fields, references, ..
-            } => {
-                if fields.is_empty() && references.is_empty() {
-                    "@relation".to_string()
-                } else {
-                    format!(
-                        "@relation(fields: [{}], references: [{}])",
-                        fields.join(", "),
-                        references.join(", ")
-                    )
-                }
-            }
+            FieldAttribute::Id => "PRIMARY KEY".to_string(),
+            FieldAttribute::Autoincrement => "AUTOINCREMENT".to_string(),
+            FieldAttribute::Unique => "UNIQUE".to_string(),
+            FieldAttribute::Map(name) => format!("MAP \"{}\"", name),
+            FieldAttribute::Default(dv) => format!("DEFAULT {}", format_default(dv)),
         })
         .collect();
     parts.join(" ")
@@ -1810,8 +1734,8 @@ mod tests {
         assert!(output.contains("    User"));
         assert!(output.contains("    Admin"));
         assert!(output.contains("model Account {"));
-        assert!(output.contains("id Int64 @id @autoincrement"));
-        assert!(output.contains("email Utf8 @unique"));
-        assert!(output.contains("@@map(\"accounts\")"));
+        assert!(output.contains("id Int64 PRIMARY KEY AUTOINCREMENT"));
+        assert!(output.contains("email Utf8 UNIQUE"));
+        assert!(output.contains("MAP \"accounts\""));
     }
 }

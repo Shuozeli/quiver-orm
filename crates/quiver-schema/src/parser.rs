@@ -143,11 +143,42 @@ impl Parser {
         let mut attributes = Vec::new();
 
         while !self.check(Token::RBrace) {
-            if self.check(Token::AtAt) {
-                attributes.push(self.parse_model_attribute()?);
-            } else {
-                fields.push(self.parse_field()?);
+            // Distinguish table-level constraints from fields by first ident
+            if let Token::Ident(ref kw) = self.peek() {
+                match kw.as_str() {
+                    "FOREIGN" => {
+                        attributes.push(self.parse_foreign_key_constraint()?);
+                        continue;
+                    }
+                    "PRIMARY" => {
+                        // Table-level PRIMARY KEY (composite) — peek ahead for KEY (
+                        if self.is_table_primary_key() {
+                            attributes.push(self.parse_table_primary_key()?);
+                            continue;
+                        }
+                    }
+                    "INDEX" => {
+                        attributes.push(self.parse_table_index()?);
+                        continue;
+                    }
+                    "UNIQUE" => {
+                        // Table-level UNIQUE (composite) — peek ahead for (
+                        if self.is_table_unique() {
+                            attributes.push(self.parse_table_unique()?);
+                            continue;
+                        }
+                    }
+                    "MAP" => {
+                        // Table-level MAP — peek ahead for string literal
+                        if self.is_table_map() {
+                            attributes.push(self.parse_table_map()?);
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
             }
+            fields.push(self.parse_field()?);
         }
         self.expect(Token::RBrace)?;
 
@@ -159,13 +190,73 @@ impl Parser {
         })
     }
 
+    /// Check if current position is a table-level `PRIMARY KEY (...)` (not a field named PRIMARY).
+    fn is_table_primary_key(&self) -> bool {
+        // PRIMARY KEY ( ... )
+        // pos+0: PRIMARY, pos+1: KEY, pos+2: (
+        self.peek_ident_at(1).as_deref() == Some("KEY")
+            && self.peek_token_at(2) == Some(Token::LParen)
+    }
+
+    /// Check if current position is a table-level `UNIQUE (...)` (not a field named UNIQUE).
+    fn is_table_unique(&self) -> bool {
+        // UNIQUE ( ... )
+        self.peek_token_at(1) == Some(Token::LParen)
+    }
+
+    /// Check if current position is a table-level `MAP "..."`.
+    fn is_table_map(&self) -> bool {
+        matches!(self.peek_token_at(1), Some(Token::StringLit(_)))
+    }
+
     fn parse_field(&mut self) -> Result<FieldDef, QuiverError> {
         let span = self.span();
         let name = self.expect_ident()?;
         let type_expr = self.parse_type_expr()?;
         let mut attributes = Vec::new();
-        while self.check(Token::At) {
-            attributes.push(self.parse_field_attribute()?);
+        // Parse inline SQL keyword constraints after the type expression.
+        // Stop when we see a token that starts a table-level constraint or a new field.
+        while let Token::Ident(ref kw) = self.peek() {
+            match kw.as_str() {
+                "PRIMARY" => {
+                    // Disambiguate: `PRIMARY KEY` (field) vs `PRIMARY KEY (...)` (table)
+                    if self.is_table_primary_key() {
+                        break;
+                    }
+                    self.advance();
+                    self.expect_keyword("KEY")?;
+                    attributes.push(FieldAttribute::Id);
+                }
+                "AUTOINCREMENT" => {
+                    self.advance();
+                    attributes.push(FieldAttribute::Autoincrement);
+                }
+                "UNIQUE" => {
+                    // Disambiguate: `UNIQUE` (field) vs `UNIQUE (...)` (table)
+                    if self.is_table_unique() {
+                        break;
+                    }
+                    self.advance();
+                    attributes.push(FieldAttribute::Unique);
+                }
+                "DEFAULT" => {
+                    self.advance();
+                    let val = self.parse_default_value()?;
+                    attributes.push(FieldAttribute::Default(val));
+                }
+                "MAP" => {
+                    // Disambiguate field-level MAP from table-level MAP using
+                    // line numbers. If MAP is on the same line as the field's
+                    // span, it's field-level. Otherwise, it's table-level.
+                    if self.span().line != span.line {
+                        break;
+                    }
+                    self.advance();
+                    let s = self.expect_string()?;
+                    attributes.push(FieldAttribute::Map(s));
+                }
+                _ => break,
+            }
         }
         Ok(FieldDef {
             name,
@@ -366,74 +457,75 @@ impl Parser {
         }
     }
 
-    // ---- Attributes ----
+    // ---- Table-level constraints ----
 
-    fn parse_field_attribute(&mut self) -> Result<FieldAttribute, QuiverError> {
-        self.expect(Token::At)?;
-        let name = self.expect_ident()?;
-        match name.as_str() {
-            "id" => Ok(FieldAttribute::Id),
-            "autoincrement" => Ok(FieldAttribute::Autoincrement),
-            "unique" => Ok(FieldAttribute::Unique),
-            "updatedAt" => Ok(FieldAttribute::UpdatedAt),
-            "ignore" => Ok(FieldAttribute::Ignore),
-            "default" => {
-                self.expect(Token::LParen)?;
-                let val = self.parse_default_value()?;
-                self.expect(Token::RParen)?;
-                Ok(FieldAttribute::Default(val))
-            }
-            "map" => {
-                self.expect(Token::LParen)?;
-                let s = self.expect_string()?;
-                self.expect(Token::RParen)?;
-                Ok(FieldAttribute::Map(s))
-            }
-            "relation" => {
-                if self.check(Token::LParen) {
-                    self.advance();
-                    let mut fields = Vec::new();
-                    let mut references = Vec::new();
-                    let mut on_delete = None;
-                    let mut on_update = None;
-                    while !self.check(Token::RParen) {
-                        let key = self.expect_ident()?;
-                        self.expect(Token::Colon)?;
-                        match key.as_str() {
-                            "fields" => fields = self.parse_ident_list()?,
-                            "references" => references = self.parse_ident_list()?,
-                            "onDelete" => on_delete = Some(self.parse_referential_action()?),
-                            "onUpdate" => on_update = Some(self.parse_referential_action()?),
-                            _ => {
-                                return Err(self.error_at_prev(&format!(
-                                    "unknown relation key '{key}', expected 'fields', 'references', 'onDelete', or 'onUpdate'"
-                                )));
-                            }
-                        }
-                        if !self.check(Token::RParen) {
-                            self.expect(Token::Comma)?;
-                        }
+    /// `FOREIGN KEY (col1, col2) REFERENCES Model (ref1, ref2) [ON DELETE action] [ON UPDATE action]`
+    fn parse_foreign_key_constraint(&mut self) -> Result<ModelAttribute, QuiverError> {
+        self.expect_keyword("FOREIGN")?;
+        self.expect_keyword("KEY")?;
+        let fields = self.parse_paren_ident_list()?;
+        self.expect_keyword("REFERENCES")?;
+        let references_model = self.expect_ident()?;
+        let references_columns = self.parse_paren_ident_list()?;
+        let mut on_delete = None;
+        let mut on_update = None;
+        // Parse optional ON DELETE / ON UPDATE
+        while let Token::Ident(ref kw) = self.peek() {
+            if kw == "ON" {
+                self.advance();
+                let action_type = self.expect_ident()?;
+                match action_type.as_str() {
+                    "DELETE" => on_delete = Some(self.parse_referential_action()?),
+                    "UPDATE" => on_update = Some(self.parse_referential_action()?),
+                    _ => {
+                        return Err(self.error_at_prev(&format!(
+                            "expected DELETE or UPDATE after ON, got '{action_type}'"
+                        )));
                     }
-                    self.expect(Token::RParen)?;
-                    Ok(FieldAttribute::Relation {
-                        fields,
-                        references,
-                        on_delete,
-                        on_update,
-                    })
-                } else {
-                    // Bare @relation (back-relation side, no fields/references)
-                    Ok(FieldAttribute::Relation {
-                        fields: Vec::new(),
-                        references: Vec::new(),
-                        on_delete: None,
-                        on_update: None,
-                    })
                 }
+            } else {
+                break;
             }
-            _ => Err(self.error_at_prev(&format!("unknown attribute '@{name}'"))),
         }
+        Ok(ModelAttribute::ForeignKey {
+            fields,
+            references_model,
+            references_columns,
+            on_delete,
+            on_update,
+        })
     }
+
+    /// `PRIMARY KEY (col1, col2)`
+    fn parse_table_primary_key(&mut self) -> Result<ModelAttribute, QuiverError> {
+        self.expect_keyword("PRIMARY")?;
+        self.expect_keyword("KEY")?;
+        let fields = self.parse_paren_ident_list()?;
+        Ok(ModelAttribute::Id(fields))
+    }
+
+    /// `INDEX (col1, col2)`
+    fn parse_table_index(&mut self) -> Result<ModelAttribute, QuiverError> {
+        self.expect_keyword("INDEX")?;
+        let fields = self.parse_paren_ident_list()?;
+        Ok(ModelAttribute::Index(fields))
+    }
+
+    /// `UNIQUE (col1, col2)`
+    fn parse_table_unique(&mut self) -> Result<ModelAttribute, QuiverError> {
+        self.expect_keyword("UNIQUE")?;
+        let fields = self.parse_paren_ident_list()?;
+        Ok(ModelAttribute::Unique(fields))
+    }
+
+    /// `MAP "table_name"`
+    fn parse_table_map(&mut self) -> Result<ModelAttribute, QuiverError> {
+        self.expect_keyword("MAP")?;
+        let s = self.expect_string()?;
+        Ok(ModelAttribute::Map(s))
+    }
+
+    // ---- Default values ----
 
     fn parse_default_value(&mut self) -> Result<DefaultValue, QuiverError> {
         match self.peek() {
@@ -495,62 +587,43 @@ impl Parser {
         }
     }
 
-    fn parse_model_attribute(&mut self) -> Result<ModelAttribute, QuiverError> {
-        self.expect(Token::AtAt)?;
-        let name = self.expect_ident()?;
-        match name.as_str() {
-            "id" => {
-                self.expect(Token::LParen)?;
-                let fields = self.parse_ident_list()?;
-                self.expect(Token::RParen)?;
-                Ok(ModelAttribute::Id(fields))
-            }
-            "unique" => {
-                self.expect(Token::LParen)?;
-                let fields = self.parse_ident_list()?;
-                self.expect(Token::RParen)?;
-                Ok(ModelAttribute::Unique(fields))
-            }
-            "index" => {
-                self.expect(Token::LParen)?;
-                let fields = self.parse_ident_list()?;
-                self.expect(Token::RParen)?;
-                Ok(ModelAttribute::Index(fields))
-            }
-            "map" => {
-                self.expect(Token::LParen)?;
-                let s = self.expect_string()?;
-                self.expect(Token::RParen)?;
-                Ok(ModelAttribute::Map(s))
-            }
-            _ => Err(self.error_at_prev(&format!("unknown model attribute '@@{name}'"))),
-        }
-    }
-
+    /// Parse a referential action: `CASCADE`, `RESTRICT`, `SET NULL`, `SET DEFAULT`, `NO ACTION`
     fn parse_referential_action(&mut self) -> Result<ReferentialAction, QuiverError> {
         let action = self.expect_ident()?;
         match action.as_str() {
-            "Cascade" => Ok(ReferentialAction::Cascade),
-            "Restrict" => Ok(ReferentialAction::Restrict),
-            "SetNull" => Ok(ReferentialAction::SetNull),
-            "SetDefault" => Ok(ReferentialAction::SetDefault),
-            "NoAction" => Ok(ReferentialAction::NoAction),
+            "CASCADE" => Ok(ReferentialAction::Cascade),
+            "RESTRICT" => Ok(ReferentialAction::Restrict),
+            "SET" => {
+                let modifier = self.expect_ident()?;
+                match modifier.as_str() {
+                    "NULL" => Ok(ReferentialAction::SetNull),
+                    "DEFAULT" => Ok(ReferentialAction::SetDefault),
+                    _ => Err(self.error_at_prev(&format!(
+                        "expected NULL or DEFAULT after SET, got '{modifier}'"
+                    ))),
+                }
+            }
+            "NO" => {
+                self.expect_keyword("ACTION")?;
+                Ok(ReferentialAction::NoAction)
+            }
             _ => Err(self.error_at_prev(&format!(
-                "unknown referential action '{action}', expected Cascade, Restrict, SetNull, SetDefault, or NoAction"
+                "unknown referential action '{action}', expected CASCADE, RESTRICT, SET NULL, SET DEFAULT, or NO ACTION"
             ))),
         }
     }
 
-    fn parse_ident_list(&mut self) -> Result<Vec<String>, QuiverError> {
-        self.expect(Token::LBracket)?;
+    /// Parse `(ident1, ident2, ...)` — parenthesized comma-separated identifier list.
+    fn parse_paren_ident_list(&mut self) -> Result<Vec<String>, QuiverError> {
+        self.expect(Token::LParen)?;
         let mut items = Vec::new();
-        while !self.check(Token::RBracket) {
+        while !self.check(Token::RParen) {
             items.push(self.expect_ident()?);
-            if !self.check(Token::RBracket) {
+            if !self.check(Token::RParen) {
                 self.expect(Token::Comma)?;
             }
         }
-        self.expect(Token::RBracket)?;
+        self.expect(Token::RParen)?;
         Ok(items)
     }
 
@@ -580,6 +653,33 @@ impl Parser {
 
     fn check_string(&self) -> bool {
         matches!(self.peek(), Token::StringLit(_))
+    }
+
+    /// Peek at the ident value at offset `n` from current position (0 = current).
+    fn peek_ident_at(&self, offset: usize) -> Option<String> {
+        self.tokens.get(self.pos + offset).and_then(|t| {
+            if let Token::Ident(name) = &t.token {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Peek at the token at offset `n` from current position.
+    fn peek_token_at(&self, offset: usize) -> Option<Token> {
+        self.tokens.get(self.pos + offset).map(|t| t.token.clone())
+    }
+
+    /// Expect a specific keyword (contextual keyword matched as Ident).
+    fn expect_keyword(&mut self, keyword: &str) -> Result<(), QuiverError> {
+        match self.peek() {
+            Token::Ident(ref name) if name == keyword => {
+                self.advance();
+                Ok(())
+            }
+            other => Err(self.error(&format!("expected '{keyword}', got {other:?}"))),
+        }
     }
 
     fn advance(&mut self) {
@@ -713,11 +813,11 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
                 age   Int16?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -892,55 +992,52 @@ mod tests {
     }
 
     #[test]
-    fn parse_relations() {
+    fn parse_foreign_key() {
         let schema = parse(
             r#"
             model User {
-                id    Int32   @id @autoincrement
-                posts Post[]  @relation
+                id    Int32   PRIMARY KEY AUTOINCREMENT
             }
 
             model Post {
-                id       Int32  @id @autoincrement
+                id       Int32  PRIMARY KEY AUTOINCREMENT
                 authorId Int32
-                author   User   @relation(fields: [authorId], references: [id])
 
-                @@index([authorId])
+                FOREIGN KEY (authorId) REFERENCES User (id) ON DELETE CASCADE
+                INDEX (authorId)
             }
         "#,
         )
         .unwrap();
         assert_eq!(schema.models.len(), 2);
 
-        // User.posts is Post[] with @relation
-        let user = &schema.models[0];
-        assert_eq!(user.fields[1].name, "posts");
-        if let BaseType::List(inner) = &user.fields[1].type_expr.base {
-            assert!(matches!(inner.base, BaseType::Named(ref n) if n == "Post"));
-        } else {
-            panic!("expected List<Post>");
-        }
-
-        // Post.author @relation(fields: [authorId], references: [id])
         let post = &schema.models[1];
-        let author_field = &post.fields[2];
-        assert_eq!(author_field.name, "author");
-        if let FieldAttribute::Relation {
-            fields, references, ..
-        } = &author_field.attributes[0]
+        assert_eq!(post.fields.len(), 2);
+        assert_eq!(post.attributes.len(), 2);
+
+        // FOREIGN KEY
+        if let ModelAttribute::ForeignKey {
+            fields,
+            references_model,
+            references_columns,
+            on_delete,
+            on_update,
+        } = &post.attributes[0]
         {
             assert_eq!(fields, &["authorId"]);
-            assert_eq!(references, &["id"]);
+            assert_eq!(references_model, "User");
+            assert_eq!(references_columns, &["id"]);
+            assert_eq!(*on_delete, Some(ReferentialAction::Cascade));
+            assert!(on_update.is_none());
         } else {
-            panic!("expected @relation");
+            panic!("expected ForeignKey");
         }
 
-        // @@index([authorId])
-        assert_eq!(post.attributes.len(), 1);
-        if let ModelAttribute::Index(fields) = &post.attributes[0] {
+        // INDEX
+        if let ModelAttribute::Index(fields) = &post.attributes[1] {
             assert_eq!(fields, &["authorId"]);
         } else {
-            panic!("expected @@index");
+            panic!("expected Index");
         }
     }
 
@@ -949,14 +1046,14 @@ mod tests {
         let schema = parse(
             r#"
             model Defaults {
-                a Int32    @default(0)
-                b Float64  @default(3.14)
-                c Utf8     @default("hello")
-                d Boolean  @default(false)
-                e Timestamp(Microsecond, UTC) @default(now())
-                f Utf8     @default(uuid())
-                g List<Utf8> @default([])
-                h Map<Utf8, Utf8> @default({})
+                a Int32    DEFAULT 0
+                b Float64  DEFAULT 3.14
+                c Utf8     DEFAULT "hello"
+                d Boolean  DEFAULT false
+                e Timestamp(Microsecond, UTC) DEFAULT now()
+                f Utf8     DEFAULT uuid()
+                g List<Utf8> DEFAULT []
+                h Map<Utf8, Utf8> DEFAULT {}
             }
         "#,
         )
@@ -997,10 +1094,10 @@ mod tests {
                 b Int32
                 c Utf8
 
-                @@id([a, b])
-                @@unique([b, c])
-                @@index([c])
-                @@map("composites")
+                PRIMARY KEY (a, b)
+                UNIQUE (b, c)
+                INDEX (c)
+                MAP "composites"
             }
         "#,
         )
@@ -1018,7 +1115,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id Int32 @id @map("user_id")
+                id Int32 PRIMARY KEY MAP "user_id"
             }
         "#,
         )
@@ -1035,7 +1132,7 @@ mod tests {
             r#"
             enum Role { User Admin }
             model Account {
-                role Role @default(User)
+                role Role DEFAULT User
             }
         "#,
         )
@@ -1068,38 +1165,36 @@ mod tests {
             }
 
             model User {
-                id       Int32                         @id @autoincrement
-                email    Utf8                          @unique
+                id       Int32                         PRIMARY KEY AUTOINCREMENT
+                email    Utf8                          UNIQUE
                 name     Utf8?
-                balance  Decimal128(10, 2)             @default(0)
-                active   Boolean                      @default(true)
-                created  Timestamp(Microsecond, UTC)   @default(now())
-                tags     List<Utf8>                    @default([])
-                role     Role                          @default(User)
+                balance  Decimal128(10, 2)             DEFAULT 0
+                active   Boolean                      DEFAULT true
+                created  Timestamp(Microsecond, UTC)   DEFAULT now()
+                tags     List<Utf8>                    DEFAULT []
+                role     Role                          DEFAULT User
 
-                posts    Post[]                        @relation
-                profile  Profile?                      @relation
-
-                @@index([email])
-                @@map("users")
+                INDEX (email)
+                MAP "users"
             }
 
             model Post {
-                id        Int32    @id @autoincrement
+                id        Int32    PRIMARY KEY AUTOINCREMENT
                 title     Utf8
                 content   LargeUtf8?
-                published Boolean  @default(false)
+                published Boolean  DEFAULT false
                 authorId  Int32
-                author    User     @relation(fields: [authorId], references: [id])
 
-                @@index([authorId])
+                FOREIGN KEY (authorId) REFERENCES User (id)
+                INDEX (authorId)
             }
 
             model Profile {
-                id     Int32      @id @autoincrement
+                id     Int32      PRIMARY KEY AUTOINCREMENT
                 bio    LargeUtf8?
-                userId Int32      @unique
-                user   User       @relation(fields: [userId], references: [id])
+                userId Int32      UNIQUE
+
+                FOREIGN KEY (userId) REFERENCES User (id)
             }
         "#,
         )
@@ -1110,7 +1205,7 @@ mod tests {
         assert_eq!(schema.enums.len(), 1);
         assert_eq!(schema.models.len(), 3);
         assert_eq!(schema.models[0].name, "User");
-        assert_eq!(schema.models[0].fields.len(), 10);
+        assert_eq!(schema.models[0].fields.len(), 8);
         assert_eq!(schema.models[0].attributes.len(), 2);
         assert_eq!(schema.models[1].name, "Post");
         assert_eq!(schema.models[2].name, "Profile");

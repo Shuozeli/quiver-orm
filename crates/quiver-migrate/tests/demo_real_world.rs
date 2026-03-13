@@ -32,16 +32,16 @@ async fn demo_blog_platform_schema_evolution() {
     let v1 = parse(
         r#"
         model Author {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
-            email Utf8  @unique
+            email Utf8  UNIQUE
         }
         model Post {
-            id       Int32 @id @autoincrement
+            id       Int32 PRIMARY KEY AUTOINCREMENT
             title    Utf8
             body     Utf8?
             authorId Int32
-            author   Author @relation(fields: [authorId], references: [id])
+            FOREIGN KEY (authorId) REFERENCES Author (id)
         }
     "#,
     )
@@ -100,18 +100,18 @@ async fn demo_blog_platform_schema_evolution() {
         r#"
         enum PostStatus { Draft Published Archived }
         model Author {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
-            email Utf8  @unique
+            email Utf8  UNIQUE
         }
         model Post {
-            id       Int32      @id @autoincrement
+            id       Int32      PRIMARY KEY AUTOINCREMENT
             title    Utf8
             body     Utf8?
-            status   PostStatus @default(Draft)
+            status   PostStatus DEFAULT Draft
             authorId Int32
-            author   Author @relation(fields: [authorId], references: [id])
-            @@index([authorId])
+            FOREIGN KEY (authorId) REFERENCES Author (id)
+            INDEX (authorId)
         }
     "#,
     )
@@ -194,10 +194,10 @@ async fn demo_ecommerce_type_evolution() {
     let v1 = parse(
         r#"
         model Product {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
             price Int32
-            sku   Utf8  @unique
+            sku   Utf8  UNIQUE
         }
     "#,
     )
@@ -236,10 +236,10 @@ async fn demo_ecommerce_type_evolution() {
     let v2 = parse(
         r#"
         model Product {
-            id    Int32   @id @autoincrement
+            id    Int32   PRIMARY KEY AUTOINCREMENT
             name  Utf8
             price Float64
-            sku   Utf8    @unique
+            sku   Utf8    UNIQUE
         }
     "#,
     )
@@ -319,14 +319,14 @@ async fn demo_saas_tenants_with_rollback() {
     let v1 = parse(
         r#"
         model Tenant {
-            id   Int32 @id @autoincrement
-            name Utf8  @unique
+            id   Int32 PRIMARY KEY AUTOINCREMENT
+            name Utf8  UNIQUE
         }
         model User {
-            id       Int32 @id @autoincrement
-            email    Utf8  @unique
+            id       Int32 PRIMARY KEY AUTOINCREMENT
+            email    Utf8  UNIQUE
             tenantId Int32
-            tenant   Tenant @relation(fields: [tenantId], references: [id])
+            FOREIGN KEY (tenantId) REFERENCES Tenant (id)
         }
     "#,
     )
@@ -399,15 +399,15 @@ async fn demo_saas_tenants_with_rollback() {
         r#"
         enum SubscriptionTier { Free Pro Enterprise }
         model Tenant {
-            id   Int32            @id @autoincrement
-            name Utf8             @unique
-            tier SubscriptionTier @default(Free)
+            id   Int32            PRIMARY KEY AUTOINCREMENT
+            name Utf8             UNIQUE
+            tier SubscriptionTier DEFAULT Free
         }
         model User {
-            id       Int32 @id @autoincrement
-            email    Utf8  @unique
+            id       Int32 PRIMARY KEY AUTOINCREMENT
+            email    Utf8  UNIQUE
             tenantId Int32
-            tenant   Tenant @relation(fields: [tenantId], references: [id])
+            FOREIGN KEY (tenantId) REFERENCES Tenant (id)
         }
     "#,
     )
@@ -490,9 +490,9 @@ async fn demo_task_tracker_enum_evolution() {
         r#"
         enum Priority { Low Medium High }
         model Task {
-            id       Int32    @id @autoincrement
+            id       Int32    PRIMARY KEY AUTOINCREMENT
             title    Utf8
-            priority Priority @default(Medium)
+            priority Priority DEFAULT Medium
         }
     "#,
     )
@@ -531,9 +531,9 @@ async fn demo_task_tracker_enum_evolution() {
         r#"
         enum Priority { Backlog Low Medium High Critical }
         model Task {
-            id       Int32    @id @autoincrement
+            id       Int32    PRIMARY KEY AUTOINCREMENT
             title    Utf8
-            priority Priority @default(Medium)
+            priority Priority DEFAULT Medium
         }
     "#,
     )
@@ -613,18 +613,18 @@ async fn demo_analytics_dashboard() {
         r#"
         enum EventType { PageView Click Purchase }
         model Campaign {
-            id    Int32 @id @autoincrement
-            name  Utf8  @unique
-            budget Int32 @default(0)
+            id    Int32 PRIMARY KEY AUTOINCREMENT
+            name  Utf8  UNIQUE
+            budget Int32 DEFAULT 0
         }
         model Event {
-            id         Int32     @id @autoincrement
+            id         Int32     PRIMARY KEY AUTOINCREMENT
             eventType  EventType
             campaignId Int32
-            campaign   Campaign  @relation(fields: [campaignId], references: [id])
-            value      Int32     @default(0)
-            @@index([campaignId])
-            @@index([eventType])
+            value      Int32     DEFAULT 0
+            FOREIGN KEY (campaignId) REFERENCES Campaign (id)
+            INDEX (campaignId)
+            INDEX (eventType)
         }
     "#,
     )
@@ -734,7 +734,7 @@ async fn demo_migration_history_audit() {
     let conn = mem_db().await;
 
     // Apply three migrations
-    let v1 = parse("model User { id Int32 @id }").unwrap();
+    let v1 = parse("model User { id Int32 PRIMARY KEY }").unwrap();
     let s1 = diff_schemas(None, &v1);
     let m1 = Migration {
         id: "20260301_001_users".to_string(),
@@ -748,8 +748,8 @@ async fn demo_migration_history_audit() {
 
     let v2 = parse(
         r#"
-        model User { id Int32 @id }
-        model Post { id Int32 @id }
+        model User { id Int32 PRIMARY KEY }
+        model Post { id Int32 PRIMARY KEY }
     "#,
     )
     .unwrap();
@@ -767,8 +767,8 @@ async fn demo_migration_history_audit() {
     let v3 = parse(
         r#"
         enum Tag { Tech Science Art }
-        model User { id Int32 @id }
-        model Post { id Int32 @id }
+        model User { id Int32 PRIMARY KEY }
+        model Post { id Int32 PRIMARY KEY }
     "#,
     )
     .unwrap();
@@ -832,7 +832,7 @@ async fn demo_sql_injection_prevented() {
     let v1 = parse(
         r#"
         enum Status { Active Inactive }
-        model Item { id Int32 @id }
+        model Item { id Int32 PRIMARY KEY }
     "#,
     )
     .unwrap();
@@ -853,7 +853,7 @@ async fn demo_sql_injection_prevented() {
     let v2 = parse(
         r#"
         enum Status { Active Inactive Pending }
-        model Item { id Int32 @id }
+        model Item { id Int32 PRIMARY KEY }
     "#,
     )
     .unwrap();
@@ -896,7 +896,7 @@ async fn demo_sql_injection_prevented() {
 }
 
 // ---------------------------------------------------------------------------
-// Demo 8: Column mapping with @@map
+// Demo 8: Column mapping with MAP
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -906,9 +906,9 @@ async fn demo_custom_table_mapping() {
     let schema = parse(
         r#"
         model UserProfile {
-            id       Int32 @id @autoincrement
-            fullName Utf8  @map("full_name")
-            @@map("user_profiles")
+            id       Int32 PRIMARY KEY AUTOINCREMENT
+            fullName Utf8  MAP "full_name"
+            MAP "user_profiles"
         }
     "#,
     )

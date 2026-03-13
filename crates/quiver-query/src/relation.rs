@@ -1,6 +1,6 @@
 //! Relation metadata and eager-loading (include) support.
 //!
-//! Relations are defined by schema `@relation` attributes. This module provides
+//! Relations are defined by schema `FOREIGN KEY` constraints. This module provides
 //! types to describe relations and execute eager-load queries.
 
 use quiver_driver_core::{DynConnection, Row, Statement, Value};

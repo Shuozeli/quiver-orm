@@ -13,7 +13,7 @@ use quiver_schema::Schema;
 use quiver_schema::ast::*;
 use serde::{Deserialize, Serialize};
 
-use crate::step::{MigrationStep, is_relation_object};
+use crate::step::MigrationStep;
 
 // ---------------------------------------------------------------------------
 // TrustedSql -- parameterized SQL built from static fragments only
@@ -531,13 +531,8 @@ fn sqlite_alter_field_rebuild(
         }
     }
 
-    // Collect non-relation column names for the data copy
-    let copy_columns: Vec<String> = model
-        .fields
-        .iter()
-        .filter(|f| !is_relation_object(f))
-        .map(column_name_for)
-        .collect();
+    // Collect column names for the data copy
+    let copy_columns: Vec<String> = model.fields.iter().map(column_name_for).collect();
 
     let mut b = trusted("ALTER TABLE ");
     b.push_ident(&table_name)?;
@@ -741,10 +736,6 @@ fn create_table_builder(
     let mut has_single_pk = false;
 
     for f in &model.fields {
-        if is_relation_object(f) {
-            continue;
-        }
-
         if !first {
             b.push_static(",\n");
         }
@@ -806,50 +797,51 @@ fn create_table_builder(
         }
     }
 
-    // Foreign keys
-    for f in &model.fields {
-        for attr in &f.attributes {
-            if let FieldAttribute::Relation {
-                fields,
-                references,
-                on_delete,
-                on_update,
-            } = attr
-            {
-                if let Some(target_model) = find_relation_target(f, schema) {
-                    let target_table =
-                        table_name_for(target_model).unwrap_or_else(|| target_model.name.clone());
-                    for (fk_field, ref_field) in fields.iter().zip(references.iter()) {
-                        if !first {
-                            b.push_static(",\n");
-                        }
-                        first = false;
-                        b.push_static("  FOREIGN KEY (");
-                        b.push_ident(fk_field)?;
-                        b.push_static(") REFERENCES ");
-                        b.push_ident(&target_table)?;
-                        b.push_static("(");
-                        b.push_ident(ref_field)?;
-                        b.push_static(")");
-                        if let Some(action) = on_delete {
-                            b.push_static(match action {
-                                ReferentialAction::Cascade => " ON DELETE CASCADE",
-                                ReferentialAction::Restrict => " ON DELETE RESTRICT",
-                                ReferentialAction::SetNull => " ON DELETE SET NULL",
-                                ReferentialAction::SetDefault => " ON DELETE SET DEFAULT",
-                                ReferentialAction::NoAction => " ON DELETE NO ACTION",
-                            });
-                        }
-                        if let Some(action) = on_update {
-                            b.push_static(match action {
-                                ReferentialAction::Cascade => " ON UPDATE CASCADE",
-                                ReferentialAction::Restrict => " ON UPDATE RESTRICT",
-                                ReferentialAction::SetNull => " ON UPDATE SET NULL",
-                                ReferentialAction::SetDefault => " ON UPDATE SET DEFAULT",
-                                ReferentialAction::NoAction => " ON UPDATE NO ACTION",
-                            });
-                        }
-                    }
+    // Foreign keys from model-level FOREIGN KEY attributes
+    for attr in &model.attributes {
+        if let ModelAttribute::ForeignKey {
+            fields,
+            references_model,
+            references_columns,
+            on_delete,
+            on_update,
+        } = attr
+        {
+            let target_table = schema
+                .models
+                .iter()
+                .find(|m| m.name == *references_model)
+                .and_then(table_name_for)
+                .unwrap_or_else(|| references_model.clone());
+            for (fk_field, ref_field) in fields.iter().zip(references_columns.iter()) {
+                if !first {
+                    b.push_static(",\n");
+                }
+                first = false;
+                b.push_static("  FOREIGN KEY (");
+                b.push_ident(fk_field)?;
+                b.push_static(") REFERENCES ");
+                b.push_ident(&target_table)?;
+                b.push_static("(");
+                b.push_ident(ref_field)?;
+                b.push_static(")");
+                if let Some(action) = on_delete {
+                    b.push_static(match action {
+                        ReferentialAction::Cascade => " ON DELETE CASCADE",
+                        ReferentialAction::Restrict => " ON DELETE RESTRICT",
+                        ReferentialAction::SetNull => " ON DELETE SET NULL",
+                        ReferentialAction::SetDefault => " ON DELETE SET DEFAULT",
+                        ReferentialAction::NoAction => " ON DELETE NO ACTION",
+                    });
+                }
+                if let Some(action) = on_update {
+                    b.push_static(match action {
+                        ReferentialAction::Cascade => " ON UPDATE CASCADE",
+                        ReferentialAction::Restrict => " ON UPDATE RESTRICT",
+                        ReferentialAction::SetNull => " ON UPDATE SET NULL",
+                        ReferentialAction::SetDefault => " ON UPDATE SET DEFAULT",
+                        ReferentialAction::NoAction => " ON UPDATE NO ACTION",
+                    });
                 }
             }
         }
@@ -1120,14 +1112,6 @@ pub(crate) fn validate_safe_ident(ident: &str) -> Result<(), QuiverError> {
     Ok(())
 }
 
-fn find_relation_target<'a>(f: &FieldDef, schema: &'a Schema) -> Option<&'a ModelDef> {
-    if let BaseType::Named(name) = &f.type_expr.base {
-        schema.models.iter().find(|m| m.name == *name)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1139,8 +1123,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id @autoincrement
-                email Utf8  @unique
+                id    Int32 PRIMARY KEY AUTOINCREMENT
+                email Utf8  UNIQUE
                 name  Utf8?
             }
         "#,
@@ -1164,7 +1148,7 @@ mod tests {
     fn create_model_down_is_drop() {
         let schema = parse(
             r#"
-            model User { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
         "#,
         )
         .unwrap();
@@ -1182,7 +1166,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -1192,9 +1176,9 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 name  Utf8
-                email Utf8 @unique
+                email Utf8 UNIQUE
             }
         "#,
         )
@@ -1216,7 +1200,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
                 age  Int32
             }
@@ -1227,7 +1211,7 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -1250,7 +1234,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
             }
         "#,
@@ -1260,9 +1244,9 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
-                @@index([email])
+                INDEX (email)
             }
         "#,
         )
@@ -1281,9 +1265,9 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
-                @@index([email])
+                INDEX (email)
             }
         "#,
         )
@@ -1292,7 +1276,7 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
             }
         "#,
@@ -1363,7 +1347,7 @@ mod tests {
             r#"
             enum Role { User Admin }
             model Account {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role Role
             }
         "#,
@@ -1386,7 +1370,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -1397,11 +1381,11 @@ mod tests {
             r#"
             enum Status { Active Inactive }
             model User {
-                id     Int32  @id
+                id     Int32  PRIMARY KEY
                 name   Utf8
-                email  Utf8   @unique
-                status Status @default(Active)
-                @@index([email])
+                email  Utf8   UNIQUE
+                status Status DEFAULT Active
+                INDEX (email)
             }
         "#,
         )
@@ -1427,13 +1411,12 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id
-                posts Post[] @relation
+                id    Int32  PRIMARY KEY
             }
             model Post {
-                id       Int32 @id
+                id       Int32 PRIMARY KEY
                 authorId Int32
-                author   User  @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+                FOREIGN KEY (authorId) REFERENCES User (id) ON DELETE CASCADE ON UPDATE RESTRICT
             }
         "#,
         )
@@ -1461,8 +1444,8 @@ mod tests {
         let schema = parse(
             r#"
             model Config {
-                id    Int32 @id
-                label Utf8  @default("it's broken")
+                id    Int32 PRIMARY KEY
+                label Utf8  DEFAULT "it's broken"
             }
         "#,
         )

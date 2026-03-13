@@ -27,10 +27,10 @@ fn create_and_read_single_row() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32  @id @autoincrement
-            email Utf8   @unique
+            id    Int32  PRIMARY KEY AUTOINCREMENT
+            email Utf8   UNIQUE
             name  Utf8?
-            active Boolean @default(true)
+            active Boolean DEFAULT true
         }
     "#,
     );
@@ -60,7 +60,7 @@ fn autoincrement_generates_ids() {
     let (conn, _schema) = setup_db(
         r#"
         model Item {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             name Utf8
         }
     "#,
@@ -89,7 +89,7 @@ fn nullable_field_accepts_null() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             name Utf8?
             bio  Utf8?
         }
@@ -116,7 +116,7 @@ fn not_null_rejects_null() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             email Utf8
         }
     "#,
@@ -139,8 +139,8 @@ fn unique_constraint_prevents_duplicates() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32 @id @autoincrement
-            email Utf8  @unique
+            id    Int32 PRIMARY KEY AUTOINCREMENT
+            email Utf8  UNIQUE
         }
     "#,
     );
@@ -168,9 +168,9 @@ fn boolean_default_value() {
     let (conn, _schema) = setup_db(
         r#"
         model Setting {
-            id      Int32   @id @autoincrement
-            enabled Boolean @default(true)
-            hidden  Boolean @default(false)
+            id      Int32   PRIMARY KEY AUTOINCREMENT
+            enabled Boolean DEFAULT true
+            hidden  Boolean DEFAULT false
         }
     "#,
     );
@@ -195,9 +195,9 @@ fn integer_default_value() {
     let (conn, _schema) = setup_db(
         r#"
         model Counter {
-            id    Int32  @id @autoincrement
-            count UInt32 @default(0)
-            score Int16  @default(100)
+            id    Int32  PRIMARY KEY AUTOINCREMENT
+            count UInt32 DEFAULT 0
+            score Int16  DEFAULT 100
         }
     "#,
     );
@@ -223,8 +223,8 @@ fn enum_default_value() {
         r#"
         enum Status { Draft Published Archived }
         model Article {
-            id     Int32  @id @autoincrement
-            status Status @default(Draft)
+            id     Int32  PRIMARY KEY AUTOINCREMENT
+            status Status DEFAULT Draft
         }
     "#,
     );
@@ -251,7 +251,7 @@ fn enum_stored_as_text() {
         r#"
         enum Role { User Admin Moderator }
         model Account {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             role Role
         }
     "#,
@@ -281,13 +281,13 @@ fn foreign_key_constraint_enforced() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32  @id @autoincrement
-            posts Post[] @relation
+            id    Int32  PRIMARY KEY AUTOINCREMENT
         }
         model Post {
-            id       Int32 @id @autoincrement
+            id       Int32 PRIMARY KEY AUTOINCREMENT
             authorId Int32
-            author   User  @relation(fields: [authorId], references: [id])
+
+            FOREIGN KEY (authorId) REFERENCES User (id)
         }
     "#,
     );
@@ -320,15 +320,15 @@ fn join_across_relation() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32  @id @autoincrement
+            id    Int32  PRIMARY KEY AUTOINCREMENT
             name  Utf8
-            posts Post[] @relation
         }
         model Post {
-            id       Int32 @id @autoincrement
+            id       Int32 PRIMARY KEY AUTOINCREMENT
             title    Utf8
             authorId Int32
-            author   User  @relation(fields: [authorId], references: [id])
+
+            FOREIGN KEY (authorId) REFERENCES User (id)
         }
     "#,
     );
@@ -370,7 +370,7 @@ fn join_across_relation() {
 }
 
 // -----------------------------------------------------------------------
-// Table/column mapping (@@map, @map)
+// Table/column mapping (MAP)
 // -----------------------------------------------------------------------
 
 #[test]
@@ -378,9 +378,9 @@ fn table_and_column_mapping() {
     let (conn, _schema) = setup_db(
         r#"
         model UserProfile {
-            id       Int32 @id @autoincrement
-            fullName Utf8  @map("full_name")
-            @@map("user_profiles")
+            id       Int32 PRIMARY KEY AUTOINCREMENT
+            fullName Utf8  MAP "full_name"
+            MAP "user_profiles"
         }
     "#,
     );
@@ -411,9 +411,9 @@ fn index_is_created() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             email Utf8
-            @@index([email])
+            INDEX (email)
         }
     "#,
     );
@@ -439,7 +439,7 @@ fn various_numeric_types() {
     let (conn, _schema) = setup_db(
         r#"
         model Numbers {
-            id      Int32   @id @autoincrement
+            id      Int32   PRIMARY KEY AUTOINCREMENT
             small   Int8
             medium  Int32
             big     Int64
@@ -487,8 +487,8 @@ fn list_stored_as_json() {
     let (conn, _schema) = setup_db(
         r#"
         model Doc {
-            id   Int32 @id @autoincrement
-            tags List<Utf8> @default([])
+            id   Int32 PRIMARY KEY AUTOINCREMENT
+            tags List<Utf8> DEFAULT []
         }
     "#,
     );
@@ -515,8 +515,8 @@ fn default_empty_list() {
     let (conn, _schema) = setup_db(
         r#"
         model Doc {
-            id   Int32 @id @autoincrement
-            tags List<Utf8> @default([])
+            id   Int32 PRIMARY KEY AUTOINCREMENT
+            tags List<Utf8> DEFAULT []
         }
     "#,
     );
@@ -543,8 +543,8 @@ fn timestamp_default_now() {
     let (conn, _schema) = setup_db(
         r#"
         model Event {
-            id      Int32 @id @autoincrement
-            created Timestamp(Microsecond, UTC) @default(now())
+            id      Int32 PRIMARY KEY AUTOINCREMENT
+            created Timestamp(Microsecond, UTC) DEFAULT now()
         }
     "#,
     );
@@ -574,9 +574,9 @@ fn update_row() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
-            score Int32 @default(0)
+            score Int32 DEFAULT 0
         }
     "#,
     );
@@ -601,7 +601,7 @@ fn delete_row() {
     let (conn, _schema) = setup_db(
         r#"
         model User {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             name Utf8
         }
     "#,
@@ -631,7 +631,7 @@ fn transaction_commit() {
     let (mut conn, _schema) = setup_db(
         r#"
         model User {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             name Utf8
         }
     "#,
@@ -658,7 +658,7 @@ fn transaction_rollback() {
     let (mut conn, _schema) = setup_db(
         r#"
         model User {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             name Utf8
         }
     "#,
@@ -694,26 +694,25 @@ fn full_schema_e2e() {
         enum Role { User Admin Moderator }
 
         model User {
-            id       Int32   @id @autoincrement
-            email    Utf8    @unique
+            id       Int32   PRIMARY KEY AUTOINCREMENT
+            email    Utf8    UNIQUE
             name     Utf8?
-            active   Boolean @default(true)
-            role     Role    @default(User)
-            posts    Post[]  @relation
+            active   Boolean DEFAULT true
+            role     Role    DEFAULT User
 
-            @@index([email])
+            INDEX (email)
         }
 
         model Post {
-            id        Int32    @id @autoincrement
+            id        Int32    PRIMARY KEY AUTOINCREMENT
             title     Utf8
             content   LargeUtf8?
-            published Boolean  @default(false)
-            views     UInt32   @default(0)
+            published Boolean  DEFAULT false
+            views     UInt32   DEFAULT 0
             authorId  Int32
-            author    User     @relation(fields: [authorId], references: [id])
 
-            @@index([authorId])
+            FOREIGN KEY (authorId) REFERENCES User (id)
+            INDEX (authorId)
         }
     "#,
     );
@@ -813,8 +812,8 @@ fn decimal_stored_as_text() {
     let (conn, _schema) = setup_db(
         r#"
         model Product {
-            id    Int32 @id @autoincrement
-            price Decimal128(10, 2) @default(0)
+            id    Int32 PRIMARY KEY AUTOINCREMENT
+            price Decimal128(10, 2) DEFAULT 0
         }
     "#,
     );
@@ -843,7 +842,7 @@ fn binary_stored_as_blob() {
     let (conn, _schema) = setup_db(
         r#"
         model File {
-            id   Int32  @id @autoincrement
+            id   Int32  PRIMARY KEY AUTOINCREMENT
             data Binary
         }
     "#,

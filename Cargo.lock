@@ -521,7 +521,7 @@ dependencies = [
 [[package]]
 name = "flatc-rs-annotator"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/flatbuffers-rs.git#879e555ab2f1f78cda1654057cafe31396ce5014"
+source = "git+https://github.com/Shuozeli/flatbuffers-rs.git?rev=879e555ab2f1f78cda1654057cafe31396ce5014#879e555ab2f1f78cda1654057cafe31396ce5014"
 dependencies = [
  "flatc-rs-schema",
  "thiserror",
@@ -530,7 +530,7 @@ dependencies = [
 [[package]]
 name = "flatc-rs-codegen"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/flatbuffers-rs.git#879e555ab2f1f78cda1654057cafe31396ce5014"
+source = "git+https://github.com/Shuozeli/flatbuffers-rs.git?rev=879e555ab2f1f78cda1654057cafe31396ce5014#879e555ab2f1f78cda1654057cafe31396ce5014"
 dependencies = [
  "flatc-rs-schema",
  "thiserror",
@@ -539,7 +539,7 @@ dependencies = [
 [[package]]
 name = "flatc-rs-compiler"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/flatbuffers-rs.git#879e555ab2f1f78cda1654057cafe31396ce5014"
+source = "git+https://github.com/Shuozeli/flatbuffers-rs.git?rev=879e555ab2f1f78cda1654057cafe31396ce5014#879e555ab2f1f78cda1654057cafe31396ce5014"
 dependencies = [
  "clap",
  "flatbuffers",
@@ -554,7 +554,7 @@ dependencies = [
 [[package]]
 name = "flatc-rs-parser"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/flatbuffers-rs.git#879e555ab2f1f78cda1654057cafe31396ce5014"
+source = "git+https://github.com/Shuozeli/flatbuffers-rs.git?rev=879e555ab2f1f78cda1654057cafe31396ce5014#879e555ab2f1f78cda1654057cafe31396ce5014"
 dependencies = [
  "flatc-rs-schema",
  "thiserror",
@@ -563,7 +563,7 @@ dependencies = [
 [[package]]
 name = "flatc-rs-schema"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/flatbuffers-rs.git#879e555ab2f1f78cda1654057cafe31396ce5014"
+source = "git+https://github.com/Shuozeli/flatbuffers-rs.git?rev=879e555ab2f1f78cda1654057cafe31396ce5014#879e555ab2f1f78cda1654057cafe31396ce5014"
 dependencies = [
  "serde",
 ]
@@ -1323,7 +1323,7 @@ dependencies = [
 [[package]]
 name = "protoc-rs-analyzer"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/protobuf-rs.git#52eed1ccc54fab71821899e81e719da5e7a89491"
+source = "git+https://github.com/Shuozeli/protobuf-rs.git?rev=52eed1ccc54fab71821899e81e719da5e7a89491#52eed1ccc54fab71821899e81e719da5e7a89491"
 dependencies = [
  "protoc-rs-parser",
  "protoc-rs-schema",
@@ -1332,7 +1332,7 @@ dependencies = [
 [[package]]
 name = "protoc-rs-codegen"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/protobuf-rs.git#52eed1ccc54fab71821899e81e719da5e7a89491"
+source = "git+https://github.com/Shuozeli/protobuf-rs.git?rev=52eed1ccc54fab71821899e81e719da5e7a89491#52eed1ccc54fab71821899e81e719da5e7a89491"
 dependencies = [
  "heck",
  "protoc-rs-schema",
@@ -1341,7 +1341,7 @@ dependencies = [
 [[package]]
 name = "protoc-rs-parser"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/protobuf-rs.git#52eed1ccc54fab71821899e81e719da5e7a89491"
+source = "git+https://github.com/Shuozeli/protobuf-rs.git?rev=52eed1ccc54fab71821899e81e719da5e7a89491#52eed1ccc54fab71821899e81e719da5e7a89491"
 dependencies = [
  "protoc-rs-schema",
 ]
@@ -1349,7 +1349,7 @@ dependencies = [
 [[package]]
 name = "protoc-rs-schema"
 version = "0.1.0"
-source = "git+https://github.com/Shuozeli/protobuf-rs.git#52eed1ccc54fab71821899e81e719da5e7a89491"
+source = "git+https://github.com/Shuozeli/protobuf-rs.git?rev=52eed1ccc54fab71821899e81e719da5e7a89491#52eed1ccc54fab71821899e81e719da5e7a89491"
 
 [[package]]
 name = "quiver-cli"

@@ -18,9 +18,9 @@ async fn apply_create_model_migration() {
     let schema = parse(
         r#"
         model User {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
-            email Utf8  @unique
+            email Utf8  UNIQUE
         }
     "#,
     )
@@ -58,7 +58,7 @@ async fn apply_then_rollback() {
     let schema = parse(
         r#"
         model Post {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             title Utf8
         }
     "#,
@@ -106,7 +106,7 @@ async fn duplicate_apply_fails() {
     let conn = open_memory_db().await;
     let schema = parse(
         r#"
-        model Tag { id Int32 @id }
+        model Tag { id Int32 PRIMARY KEY }
     "#,
     )
     .unwrap();
@@ -152,7 +152,7 @@ async fn add_field_migration() {
     let v1 = parse(
         r#"
         model User {
-            id   Int32 @id @autoincrement
+            id   Int32 PRIMARY KEY AUTOINCREMENT
             name Utf8
         }
     "#,
@@ -176,7 +176,7 @@ async fn add_field_migration() {
     let v2 = parse(
         r#"
         model User {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
             email Utf8?
         }
@@ -216,7 +216,7 @@ async fn multi_step_migration_with_enum_and_index() {
     let old = parse(
         r#"
         model User {
-            id   Int32 @id
+            id   Int32 PRIMARY KEY
             name Utf8
         }
     "#,
@@ -244,11 +244,11 @@ async fn multi_step_migration_with_enum_and_index() {
         r#"
         enum Status { Active Inactive }
         model User {
-            id     Int32  @id
+            id     Int32  PRIMARY KEY
             name   Utf8
             email  Utf8
-            status Status @default(Active)
-            @@index([email])
+            status Status DEFAULT Active
+            INDEX (email)
         }
     "#,
     )
@@ -295,7 +295,7 @@ async fn alter_field_type_via_table_rebuild() {
     let v1 = parse(
         r#"
         model Product {
-            id    Int32 @id @autoincrement
+            id    Int32 PRIMARY KEY AUTOINCREMENT
             name  Utf8
             price Int32
         }
@@ -332,7 +332,7 @@ async fn alter_field_type_via_table_rebuild() {
     let v2 = parse(
         r#"
         model Product {
-            id    Int32   @id @autoincrement
+            id    Int32   PRIMARY KEY AUTOINCREMENT
             name  Utf8
             price Float64
         }
@@ -401,7 +401,7 @@ async fn alter_field_nullability_via_table_rebuild() {
     let v1 = parse(
         r#"
         model Item {
-            id   Int32 @id
+            id   Int32 PRIMARY KEY
             name Utf8
         }
     "#,
@@ -430,7 +430,7 @@ async fn alter_field_nullability_via_table_rebuild() {
     let v2 = parse(
         r#"
         model Item {
-            id   Int32 @id
+            id   Int32 PRIMARY KEY
             name Utf8?
         }
     "#,
@@ -486,7 +486,7 @@ async fn introspect_simple_table() {
     assert_eq!(model.name, "User");
     assert_eq!(model.fields.len(), 3);
 
-    // id field should have @id
+    // id field should have PRIMARY KEY
     let id_field = model.fields.iter().find(|f| f.name == "id").unwrap();
     assert!(
         id_field
@@ -501,7 +501,7 @@ async fn introspect_simple_table() {
             .any(|a| matches!(a, quiver_schema::ast::FieldAttribute::Autoincrement))
     );
 
-    // email should have @unique
+    // email should have UNIQUE
     let email_field = model.fields.iter().find(|f| f.name == "email").unwrap();
     assert!(
         email_field
@@ -529,20 +529,15 @@ async fn introspect_with_foreign_key() {
     let schema = introspect(&conn, SqlDialect::Sqlite).await.unwrap();
     assert_eq!(schema.models.len(), 2);
 
-    // Post should have @relation on authorId
+    // Post should have a FOREIGN KEY model attribute
     let post = schema.models.iter().find(|m| m.name == "Post").unwrap();
-    let author_id = post.fields.iter().find(|f| f.name == "authorId").unwrap();
-    assert!(
-        author_id
-            .attributes
-            .iter()
-            .any(|a| matches!(a, quiver_schema::ast::FieldAttribute::Relation { .. }))
-    );
-
-    // User should have a reverse relation field (posts)
-    let user = schema.models.iter().find(|m| m.name == "User").unwrap();
-    let posts_field = user.fields.iter().find(|f| f.name == "posts");
-    assert!(posts_field.is_some());
+    assert!(post.attributes.iter().any(|a| matches!(
+        a,
+        quiver_schema::ast::ModelAttribute::ForeignKey {
+            references_model,
+            ..
+        } if references_model == "User"
+    )));
 }
 
 #[tokio::test]
@@ -587,7 +582,7 @@ async fn introspect_with_index() {
     let schema = introspect(&conn, SqlDialect::Sqlite).await.unwrap();
     let model = &schema.models[0];
 
-    // Should have @@index([email])
+    // Should have INDEX (email)
     let has_index = model.attributes.iter().any(
         |a| matches!(a, quiver_schema::ast::ModelAttribute::Index(cols) if cols == &["email"]),
     );
@@ -633,7 +628,7 @@ async fn introspect_mapped_table_generates_pascal_case() {
 
     // Model name should be PascalCase
     assert_eq!(model.name, "UserProfiles");
-    // Should have @@map("user_profiles")
+    // Should have MAP "user_profiles"
     assert!(
         model.attributes.iter().any(
             |a| matches!(a, quiver_schema::ast::ModelAttribute::Map(n) if n == "user_profiles")
@@ -666,8 +661,8 @@ async fn introspect_to_quiver_output() {
     assert!(output.contains("enum Status {"));
     assert!(output.contains("Active"));
     assert!(output.contains("model Account {"));
-    assert!(output.contains("@id"));
-    assert!(output.contains("@unique"));
+    assert!(output.contains("PRIMARY KEY"));
+    assert!(output.contains("UNIQUE"));
 }
 
 #[tokio::test]
@@ -679,10 +674,10 @@ async fn introspect_roundtrip_with_migration() {
         r#"
         enum Role { User Admin }
         model Account {
-            id    Int32 @id @autoincrement
-            email Utf8  @unique
+            id    Int32 PRIMARY KEY AUTOINCREMENT
+            email Utf8  UNIQUE
             name  Utf8?
-            @@index([email])
+            INDEX (email)
         }
     "#,
     )

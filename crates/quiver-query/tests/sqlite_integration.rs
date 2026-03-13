@@ -13,18 +13,19 @@ async fn setup() -> quiver_driver_sqlite::SqliteConnection {
         r#"
         enum Role { User Admin Moderator }
         model Account {
-            id    Int32  @id @autoincrement
-            email Utf8   @unique
+            id    Int32  PRIMARY KEY AUTOINCREMENT
+            email Utf8   UNIQUE
             name  Utf8
-            role  Role   @default(User)
-            score Int32  @default(0)
+            role  Role   DEFAULT User
+            score Int32  DEFAULT 0
         }
         model Post {
-            id       Int32 @id @autoincrement
+            id       Int32 PRIMARY KEY AUTOINCREMENT
             title    Utf8
             body     Utf8?
             authorId Int32
-            author   Account @relation(fields: [authorId], references: [id])
+
+            FOREIGN KEY (authorId) REFERENCES Account (id)
         }
     "#,
     )

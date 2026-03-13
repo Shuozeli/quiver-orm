@@ -43,10 +43,6 @@ fn gen_create_table(
     let mut has_single_pk = false;
 
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
-
         let col_name = column_name_for(f);
         let sql_type = base_type_to_sql(&f.type_expr.base, schema, dialect);
         let mut col = format!("  \"{}\" {}", col_name, sql_type);
@@ -93,33 +89,40 @@ fn gen_create_table(
         }
     }
 
-    // Foreign keys
-    for f in &m.fields {
-        for attr in &f.attributes {
-            if let FieldAttribute::Relation {
-                fields,
-                references,
-                on_delete,
-                on_update,
-            } = attr
-            {
-                if let Some(target_model) = find_relation_target(f, schema) {
-                    let target_table = model_table_name(target_model);
-                    for (fk_field, ref_field) in fields.iter().zip(references.iter()) {
-                        let mut fk = format!(
-                            "  FOREIGN KEY (\"{}\") REFERENCES \"{}\"(\"{}\")",
-                            fk_field, target_table, ref_field
-                        );
-                        if let Some(action) = on_delete {
-                            fk.push_str(&format!(" ON DELETE {}", action));
-                        }
-                        if let Some(action) = on_update {
-                            fk.push_str(&format!(" ON UPDATE {}", action));
-                        }
-                        columns.push(fk);
-                    }
-                }
+    // Foreign keys (from @@fk model attributes)
+    for attr in &m.attributes {
+        if let ModelAttribute::ForeignKey {
+            fields,
+            references_model,
+            references_columns,
+            on_delete,
+            on_update,
+        } = attr
+        {
+            let target_table = schema
+                .models
+                .iter()
+                .find(|mm| mm.name == *references_model)
+                .map(model_table_name)
+                .unwrap_or_else(|| references_model.clone());
+            let fk_cols: Vec<String> = fields.iter().map(|f| format!("\"{}\"", f)).collect();
+            let ref_cols: Vec<String> = references_columns
+                .iter()
+                .map(|r| format!("\"{}\"", r))
+                .collect();
+            let mut fk = format!(
+                "  FOREIGN KEY ({}) REFERENCES \"{}\"({})",
+                fk_cols.join(", "),
+                target_table,
+                ref_cols.join(", "),
+            );
+            if let Some(action) = on_delete {
+                fk.push_str(&format!(" ON DELETE {}", action));
             }
+            if let Some(action) = on_update {
+                fk.push_str(&format!(" ON UPDATE {}", action));
+            }
+            columns.push(fk);
         }
     }
 
@@ -322,15 +325,6 @@ fn base_type_to_mysql(base: &BaseType, schema: &Schema) -> &'static str {
     }
 }
 
-fn is_relation_object(f: &FieldDef) -> bool {
-    // A relation object field is one with @relation attribute that is NOT a scalar FK.
-    // E.g., `posts Post[] @relation` or `author User @relation(fields: [authorId], references: [id])`
-    // The scalar FK field (authorId Int32) is kept.
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
 fn has_attr(f: &FieldDef, pred: impl Fn(&FieldAttribute) -> bool) -> bool {
     f.attributes.iter().any(pred)
 }
@@ -429,14 +423,6 @@ fn validate_safe_literal(s: &str) -> Result<(), QuiverError> {
     Ok(())
 }
 
-fn find_relation_target<'a>(f: &FieldDef, schema: &'a Schema) -> Option<&'a ModelDef> {
-    if let BaseType::Named(name) = &f.type_expr.base {
-        schema.models.iter().find(|m| m.name == *name)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,10 +433,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -470,8 +456,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id Int32 @id
-                @@map("users")
+                id Int32 PRIMARY KEY
+                MAP "users"
             }
         "#,
         )
@@ -485,9 +471,9 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
-                @@index([email])
+                INDEX (email)
             }
         "#,
         )
@@ -502,13 +488,12 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id
-                posts Post[] @relation
+                id    Int32  PRIMARY KEY
             }
             model Post {
-                id       Int32 @id
+                id       Int32 PRIMARY KEY
                 authorId Int32
-                author   User  @relation(fields: [authorId], references: [id])
+                FOREIGN KEY (authorId) REFERENCES User (id)
             }
         "#,
         )
@@ -516,9 +501,6 @@ mod tests {
         let ddl = SqlGenerator::generate(&schema, SqlDialect::Sqlite).unwrap();
         // Post table should have FK constraint
         assert!(ddl.contains("FOREIGN KEY (\"authorId\") REFERENCES \"User\"(\"id\")"));
-        // Relation object fields should be excluded from columns
-        assert!(!ddl.contains("\"posts\""));
-        assert!(!ddl.contains("\"author\""));
     }
 
     #[test]
@@ -527,8 +509,8 @@ mod tests {
             r#"
             enum Role { User Admin Moderator }
             model Account {
-                id   Int32 @id
-                role Role  @default(Admin)
+                id   Int32 PRIMARY KEY
+                role Role  DEFAULT Admin
             }
         "#,
         )
@@ -542,8 +524,8 @@ mod tests {
         let schema = parse(
             r#"
             model Event {
-                id      Int32 @id
-                created Timestamp(Microsecond, UTC) @default(now())
+                id      Int32 PRIMARY KEY
+                created Timestamp(Microsecond, UTC) DEFAULT now()
                 day     Date32
             }
         "#,
@@ -559,10 +541,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -585,10 +567,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -611,8 +593,8 @@ mod tests {
         let schema = parse(
             r#"
             model Event {
-                id      Int32 @id
-                created Timestamp(Microsecond, UTC) @default(now())
+                id      Int32 PRIMARY KEY
+                created Timestamp(Microsecond, UTC) DEFAULT now()
                 day     Date32
                 t       Time64(Microsecond)
             }
@@ -634,9 +616,9 @@ mod tests {
         let schema = parse(
             r#"
             model Settings {
-                id      Int32   @id
-                enabled Boolean @default(true)
-                hidden  Boolean @default(false)
+                id      Int32   PRIMARY KEY
+                enabled Boolean DEFAULT true
+                hidden  Boolean DEFAULT false
             }
         "#,
         )
@@ -659,13 +641,12 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id
-                posts Post[] @relation
+                id    Int32  PRIMARY KEY
             }
             model Post {
-                id       Int32 @id
+                id       Int32 PRIMARY KEY
                 authorId Int32
-                author   User  @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+                FOREIGN KEY (authorId) REFERENCES User (id) ON DELETE CASCADE ON UPDATE RESTRICT
             }
         "#,
         )
@@ -685,8 +666,8 @@ mod tests {
         let schema = parse(
             r#"
             model Doc {
-                id   Int32 @id
-                tags List<Utf8> @default([])
+                id   Int32 PRIMARY KEY
+                tags List<Utf8> DEFAULT []
             }
         "#,
         )

@@ -48,9 +48,6 @@ fn gen_struct(out: &mut String, m: &ModelDef, schema: &Schema) {
 
     out.push_str(&format!("pub struct {} {{\n", m.name));
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
         let rust_type = type_to_rust(&f.type_expr, schema);
         let col_rename = get_field_map_name(f);
         if let Some(rename) = col_rename {
@@ -65,7 +62,7 @@ fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("#[derive(Debug, Clone, Serialize, Deserialize)]\n");
     out.push_str(&format!("pub struct {}CreateInput {{\n", m.name));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let base_type = type_to_rust(&f.type_expr, schema);
@@ -87,7 +84,7 @@ fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("#[derive(Debug, Clone, Default, Serialize, Deserialize)]\n");
     out.push_str(&format!("pub struct {}UpdateInput {{\n", m.name));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let base = base_rust_type(&f.type_expr.base, schema);
@@ -171,12 +168,6 @@ fn is_auto_field(f: &FieldDef) -> bool {
         .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
 }
 
-fn is_relation_object(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
 fn has_default(f: &FieldDef) -> bool {
     f.attributes
         .iter()
@@ -211,11 +202,11 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
                 age   Int16
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -236,7 +227,7 @@ mod tests {
             r#"
             enum Role { User Admin Moderator }
             model Account {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role Role
             }
         "#,
@@ -255,10 +246,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
+                id    Int32  PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 name  Utf8?
-                active Boolean @default(true)
+                active Boolean DEFAULT true
             }
         "#,
         )
@@ -282,7 +273,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id @autoincrement
+                id    Int32 PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 score Int32
             }
@@ -303,7 +294,7 @@ mod tests {
         let schema = parse(
             r#"
             model Doc {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 tags  List<Utf8>
                 meta  Map<Utf8, Int32>
             }
@@ -320,7 +311,7 @@ mod tests {
         let schema = parse(
             r#"
             model Event {
-                id      Int32 @id
+                id      Int32 PRIMARY KEY
                 created Timestamp(Microsecond, UTC)
                 day     Date32
             }
@@ -337,8 +328,8 @@ mod tests {
         let schema = parse(
             r#"
             model UserProfile {
-                id       Int32 @id
-                fullName Utf8  @map("full_name")
+                id       Int32 PRIMARY KEY
+                fullName Utf8  MAP "full_name"
             }
         "#,
         )
@@ -353,13 +344,12 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id
-                posts Post[] @relation
+                id    Int32  PRIMARY KEY
             }
             model Post {
-                id       Int32 @id
+                id       Int32 PRIMARY KEY
                 authorId Int32
-                author   User  @relation(fields: [authorId], references: [id])
+                FOREIGN KEY (authorId) REFERENCES User (id)
             }
         "#,
         )
@@ -381,7 +371,7 @@ mod tests {
         let schema = parse(
             r#"
             model Item {
-                id   Int32 @id @autoincrement
+                id   Int32 PRIMARY KEY AUTOINCREMENT
                 name Utf8
             }
         "#,

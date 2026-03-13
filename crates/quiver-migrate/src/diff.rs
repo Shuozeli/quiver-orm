@@ -3,7 +3,7 @@
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
 
-use crate::step::{MigrationStep, is_relation_object};
+use crate::step::MigrationStep;
 
 /// Compare two schemas and produce the migration steps needed to go from `old` to `new`.
 ///
@@ -79,7 +79,7 @@ fn diff_models(old: &Schema, new: &Schema, steps: &mut Vec<MigrationStep>) {
                     name: new_model.name.clone(),
                     model: new_model.clone(),
                 });
-                // Also emit CreateIndex steps for any @@index on the new model
+                // Also emit CreateIndex steps for any INDEX on the new model
                 let empty = ModelDef {
                     name: new_model.name.clone(),
                     fields: Vec::new(),
@@ -108,9 +108,6 @@ fn diff_models(old: &Schema, new: &Schema, steps: &mut Vec<MigrationStep>) {
 fn diff_model_fields(old: &ModelDef, new: &ModelDef, steps: &mut Vec<MigrationStep>) {
     // Detect added fields
     for new_field in &new.fields {
-        if is_relation_object(new_field) {
-            continue;
-        }
         let old_field = old.fields.iter().find(|f| f.name == new_field.name);
         match old_field {
             None => {
@@ -133,9 +130,6 @@ fn diff_model_fields(old: &ModelDef, new: &ModelDef, steps: &mut Vec<MigrationSt
 
     // Detect dropped fields
     for old_field in &old.fields {
-        if is_relation_object(old_field) {
-            continue;
-        }
         if !new.fields.iter().any(|f| f.name == old_field.name) {
             steps.push(MigrationStep::DropField {
                 model: new.name.clone(),
@@ -257,8 +251,8 @@ mod tests {
             r#"
             enum Role { User Admin }
             model Account {
-                id    Int32 @id @autoincrement
-                email Utf8  @unique
+                id    Int32 PRIMARY KEY AUTOINCREMENT
+                email Utf8  UNIQUE
                 role  Role
             }
         "#,
@@ -277,7 +271,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -287,7 +281,7 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 name  Utf8
                 email Utf8
             }
@@ -307,7 +301,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
                 age  Int32
             }
@@ -318,7 +312,7 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -337,7 +331,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id Int32 @id
+                id Int32 PRIMARY KEY
             }
         "#,
         )
@@ -346,10 +340,10 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id Int32 @id
+                id Int32 PRIMARY KEY
             }
             model Post {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 title Utf8
             }
         "#,
@@ -365,15 +359,15 @@ mod tests {
     fn diff_drop_model() {
         let old = parse(
             r#"
-            model User { id Int32 @id }
-            model Post { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
+            model Post { id Int32 PRIMARY KEY }
         "#,
         )
         .unwrap();
 
         let new = parse(
             r#"
-            model User { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
         "#,
         )
         .unwrap();
@@ -388,7 +382,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name Utf8
             }
         "#,
@@ -398,7 +392,7 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 name LargeUtf8
             }
         "#,
@@ -415,7 +409,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 bio  Utf8
             }
         "#,
@@ -425,7 +419,7 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 bio  Utf8?
             }
         "#,
@@ -442,7 +436,7 @@ mod tests {
         let old = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
             }
         "#,
@@ -452,9 +446,9 @@ mod tests {
         let new = parse(
             r#"
             model User {
-                id    Int32 @id
+                id    Int32 PRIMARY KEY
                 email Utf8
-                @@index([email])
+                INDEX (email)
             }
         "#,
         )
@@ -469,7 +463,7 @@ mod tests {
     fn diff_add_enum() {
         let old = parse(
             r#"
-            model User { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
         "#,
         )
         .unwrap();
@@ -477,7 +471,7 @@ mod tests {
         let new = parse(
             r#"
             enum Role { User Admin }
-            model User { id Int32 @id }
+            model User { id Int32 PRIMARY KEY }
         "#,
         )
         .unwrap();
@@ -516,10 +510,10 @@ mod tests {
             r#"
             enum Role { User Admin }
             model Account {
-                id    Int32 @id @autoincrement
-                email Utf8  @unique
-                role  Role  @default(User)
-                @@index([email])
+                id    Int32 PRIMARY KEY AUTOINCREMENT
+                email Utf8  UNIQUE
+                role  Role  DEFAULT User
+                INDEX (email)
             }
         "#,
         )

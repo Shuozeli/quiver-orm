@@ -27,8 +27,6 @@ pub enum Token {
     Comma,    // ,
     Colon,    // :
     Question, // ?
-    At,       // @
-    AtAt,     // @@
     // End
     Eof,
 }
@@ -185,21 +183,6 @@ impl<'a> Lexer<'a> {
                     token: Token::Question,
                     span,
                 })
-            }
-            b'@' => {
-                self.advance();
-                if self.pos < self.source.len() && self.source[self.pos] == b'@' {
-                    self.advance();
-                    Ok(SpannedToken {
-                        token: Token::AtAt,
-                        span,
-                    })
-                } else {
-                    Ok(SpannedToken {
-                        token: Token::At,
-                        span,
-                    })
-                }
             }
             b'"' => self.read_string(span),
             b'-' | b'0'..=b'9' => self.read_number(span),
@@ -409,7 +392,7 @@ mod tests {
     #[test]
     fn symbols() {
         assert_eq!(
-            lex("{ } ( ) [ ] < > , : ? @ @@"),
+            lex("{ } ( ) [ ] < > , : ?"),
             vec![
                 Token::LBrace,
                 Token::RBrace,
@@ -422,8 +405,6 @@ mod tests {
                 Token::Comma,
                 Token::Colon,
                 Token::Question,
-                Token::At,
-                Token::AtAt,
                 Token::Eof,
             ]
         );
@@ -483,14 +464,13 @@ mod tests {
     #[test]
     fn model_field_line() {
         assert_eq!(
-            lex("id Int32 @id @autoincrement"),
+            lex("id Int32 PRIMARY KEY AUTOINCREMENT"),
             vec![
                 Token::Ident("id".into()),
                 Token::Ident("Int32".into()),
-                Token::At,
-                Token::Ident("id".into()),
-                Token::At,
-                Token::Ident("autoincrement".into()),
+                Token::Ident("PRIMARY".into()),
+                Token::Ident("KEY".into()),
+                Token::Ident("AUTOINCREMENT".into()),
                 Token::Eof,
             ]
         );

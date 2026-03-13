@@ -15,29 +15,27 @@ enum Role {
 }
 
 model User {
-    id       Int32                         @id @autoincrement
-    email    Utf8                          @unique
+    id       Int32                         PRIMARY KEY AUTOINCREMENT
+    email    Utf8                          UNIQUE
     name     Utf8?
-    balance  Decimal128(10, 2)             @default(0)
-    active   Boolean                      @default(true)
-    created  Timestamp(Microsecond, UTC)   @default(now())
-    tags     List<Utf8>                    @default([])
-    role     Role                          @default(User)
+    balance  Decimal128(10, 2)             DEFAULT 0
+    active   Boolean                      DEFAULT true
+    created  Timestamp(Microsecond, UTC)   DEFAULT now()
+    tags     List<Utf8>                    DEFAULT []
+    role     Role                          DEFAULT User
 
-    posts    Post[]                        @relation
-
-    @@index([email])
-    @@map("users")
+    INDEX (email)
+    MAP "users"
 }
 
 model Post {
-    id        Int32    @id @autoincrement
+    id        Int32    PRIMARY KEY AUTOINCREMENT
     title     Utf8
     content   LargeUtf8?
-    published Boolean  @default(false)
-    views     UInt32   @default(0)
+    published Boolean  DEFAULT false
+    views     UInt32   DEFAULT 0
     authorId  Int32
-    author    User     @relation(fields: [authorId], references: [id])
 
-    @@index([authorId])
+    FOREIGN KEY (authorId) REFERENCES User (id)
+    INDEX (authorId)
 }

@@ -56,9 +56,6 @@ fn gen_model_module(out: &mut String, m: &ModelDef, schema: &Schema) {
 fn gen_field_constants(out: &mut String, m: &ModelDef) {
     out.push_str("    pub mod fields {\n");
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
         let const_name = to_screaming_snake(&f.name);
         out.push_str(&format!(
             "        pub const {}: &str = \"{}\";\n",
@@ -129,10 +126,6 @@ fn gen_filter_helpers(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("        use super::*;\n\n");
 
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
-
         let field_name = &f.name;
         let fn_prefix = to_snake(field_name);
         let filter_type = classify_filter_type(&f.type_expr, schema);
@@ -300,10 +293,6 @@ fn gen_order_helpers(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("        use super::*;\n\n");
 
     for f in &m.fields {
-        if is_relation_object(f) {
-            continue;
-        }
-
         // Skip collection types -- can't ORDER BY a list
         if is_collection_type(&f.type_expr, schema) {
             continue;
@@ -331,56 +320,97 @@ fn gen_order_helpers(out: &mut String, m: &ModelDef, schema: &Schema) {
 }
 
 fn gen_relation_defs(out: &mut String, m: &ModelDef, schema: &Schema) {
-    let relations: Vec<&FieldDef> = m.fields.iter().filter(|f| is_relation_object(f)).collect();
-    if relations.is_empty() {
+    // Collect relations:
+    // ManyToOne: from @@fk on this model (this model holds the FK)
+    // OneToMany: from @@fk on other models pointing to this model
+    struct RelInfo {
+        name: String,
+        from_model: String,
+        to_model: String,
+        fields: Vec<String>,
+        references: Vec<String>,
+        relation_type: &'static str,
+    }
+
+    let mut rels: Vec<RelInfo> = Vec::new();
+
+    // ManyToOne: this model has @@fk pointing to another model
+    for attr in &m.attributes {
+        if let ModelAttribute::ForeignKey {
+            fields,
+            references_model,
+            references_columns,
+            ..
+        } = attr
+        {
+            let fn_name = to_snake(references_model);
+            rels.push(RelInfo {
+                name: fn_name,
+                from_model: m.name.clone(),
+                to_model: references_model.clone(),
+                fields: fields.clone(),
+                references: references_columns.clone(),
+                relation_type: "RelationType::ManyToOne",
+            });
+        }
+    }
+
+    // OneToMany: other models have @@fk pointing to this model
+    for other in &schema.models {
+        if other.name == m.name {
+            continue;
+        }
+        for attr in &other.attributes {
+            if let ModelAttribute::ForeignKey {
+                fields,
+                references_model,
+                references_columns,
+                ..
+            } = attr
+            {
+                if references_model == &m.name {
+                    let fn_name = format!("{}s", to_snake(&other.name));
+                    rels.push(RelInfo {
+                        name: fn_name,
+                        from_model: m.name.clone(),
+                        to_model: other.name.clone(),
+                        fields: references_columns.clone(),
+                        references: fields.clone(),
+                        relation_type: "RelationType::OneToMany",
+                    });
+                }
+            }
+        }
+    }
+
+    if rels.is_empty() {
         return;
     }
 
     out.push_str("    pub mod relations {\n");
     out.push_str("        use super::*;\n\n");
 
-    for f in &relations {
-        let fn_name = to_snake(&f.name);
-        let (fields, references) = get_relation_fields(f);
-        let is_list = is_list_relation(f);
-        let target_model = get_relation_target(f);
-
-        let relation_type = if is_list {
-            "RelationType::OneToMany"
-        } else {
-            // Check if target has a list relation back to us
-            let target = schema.models.iter().find(|mm| mm.name == target_model);
-            let has_back_list = target.is_some_and(|t| {
-                t.fields.iter().any(|tf| {
-                    is_relation_object(tf)
-                        && is_list_relation(tf)
-                        && get_relation_target(tf) == m.name
-                })
-            });
-            if has_back_list {
-                "RelationType::ManyToOne"
-            } else {
-                "RelationType::OneToOne"
-            }
-        };
-
-        out.push_str(&format!("        pub fn {}() -> RelationDef {{\n", fn_name));
+    for rel in &rels {
+        out.push_str(&format!(
+            "        pub fn {}() -> RelationDef {{\n",
+            rel.name
+        ));
         out.push_str("            RelationDef {\n");
         out.push_str(&format!(
             "                name: \"{}\".to_string(),\n",
-            f.name
+            rel.name
         ));
         out.push_str(&format!(
             "                from_model: \"{}\".to_string(),\n",
-            m.name
+            rel.from_model
         ));
         out.push_str(&format!(
             "                to_model: \"{}\".to_string(),\n",
-            target_model
+            rel.to_model
         ));
         out.push_str(&format!(
             "                fields: vec![{}],\n",
-            fields
+            rel.fields
                 .iter()
                 .map(|f| format!("\"{}\".to_string()", f))
                 .collect::<Vec<_>>()
@@ -388,7 +418,7 @@ fn gen_relation_defs(out: &mut String, m: &ModelDef, schema: &Schema) {
         ));
         out.push_str(&format!(
             "                references: vec![{}],\n",
-            references
+            rel.references
                 .iter()
                 .map(|r| format!("\"{}\".to_string()", r))
                 .collect::<Vec<_>>()
@@ -396,7 +426,7 @@ fn gen_relation_defs(out: &mut String, m: &ModelDef, schema: &Schema) {
         ));
         out.push_str(&format!(
             "                relation_type: {},\n",
-            relation_type
+            rel.relation_type
         ));
         out.push_str("            }\n");
         out.push_str("        }\n\n");
@@ -404,9 +434,9 @@ fn gen_relation_defs(out: &mut String, m: &ModelDef, schema: &Schema) {
         // Include helper
         out.push_str(&format!(
             "        pub fn include_{}() -> Include {{\n",
-            fn_name
+            rel.name
         ));
-        out.push_str(&format!("            Include::new({}())\n", fn_name));
+        out.push_str(&format!("            Include::new({}())\n", rel.name));
         out.push_str("        }\n\n");
     }
 
@@ -419,7 +449,7 @@ fn gen_create_data(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("    #[derive(Debug, Clone)]\n");
     out.push_str("    pub struct CreateData {\n");
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let rust_type = type_to_value_input(&f.type_expr, schema);
@@ -447,7 +477,7 @@ fn gen_create_data(out: &mut String, m: &ModelDef, schema: &Schema) {
         table_name
     ));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let field_snake = to_snake(&f.name);
@@ -480,7 +510,7 @@ fn gen_update_data(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("    #[derive(Debug, Clone, Default)]\n");
     out.push_str("    pub struct UpdateData {\n");
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let rust_type = type_to_value_input(&f.type_expr, schema);
@@ -500,7 +530,7 @@ fn gen_update_data(out: &mut String, m: &ModelDef, schema: &Schema) {
         table_name
     ));
     for f in &m.fields {
-        if is_auto_field(f) || is_relation_object(f) {
+        if is_auto_field(f) {
             continue;
         }
         let field_snake = to_snake(&f.name);
@@ -622,46 +652,10 @@ fn is_auto_field(f: &FieldDef) -> bool {
         .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
 }
 
-fn is_relation_object(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Relation { .. }))
-}
-
 fn has_default(f: &FieldDef) -> bool {
     f.attributes
         .iter()
         .any(|a| matches!(a, FieldAttribute::Default(_)))
-}
-
-fn get_relation_fields(f: &FieldDef) -> (Vec<String>, Vec<String>) {
-    for attr in &f.attributes {
-        if let FieldAttribute::Relation {
-            fields, references, ..
-        } = attr
-        {
-            return (fields.clone(), references.clone());
-        }
-    }
-    (vec![], vec![])
-}
-
-fn get_relation_target(f: &FieldDef) -> String {
-    match &f.type_expr.base {
-        BaseType::Named(name) => name.clone(),
-        BaseType::List(inner) | BaseType::LargeList(inner) => match &inner.base {
-            BaseType::Named(name) => name.clone(),
-            _ => String::new(),
-        },
-        _ => String::new(),
-    }
-}
-
-fn is_list_relation(f: &FieldDef) -> bool {
-    matches!(
-        &f.type_expr.base,
-        BaseType::List(_) | BaseType::LargeList(_)
-    )
 }
 
 #[cfg(test)]
@@ -674,10 +668,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
                 name  Utf8?
-                score Int32  @default(0)
+                score Int32  DEFAULT 0
             }
         "#,
         )
@@ -695,7 +689,7 @@ mod tests {
         let schema = parse(
             r#"
             model Post {
-                id    Int32 @id @autoincrement
+                id    Int32 PRIMARY KEY AUTOINCREMENT
                 title Utf8
             }
         "#,
@@ -717,8 +711,8 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id @autoincrement
-                email Utf8  @unique
+                id    Int32 PRIMARY KEY AUTOINCREMENT
+                email Utf8  UNIQUE
                 score Int32
                 active Boolean
                 bio   Utf8?
@@ -755,7 +749,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32 @id @autoincrement
+                id    Int32 PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 score Int32
             }
@@ -773,26 +767,25 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
-                posts Post[] @relation
+                id    Int32  PRIMARY KEY AUTOINCREMENT
             }
             model Post {
-                id       Int32 @id @autoincrement
+                id       Int32 PRIMARY KEY AUTOINCREMENT
                 authorId Int32
-                author   User  @relation(fields: [authorId], references: [id])
+                FOREIGN KEY (authorId) REFERENCES User (id)
             }
         "#,
         )
         .unwrap();
         let code = RustClientGenerator::generate(&schema).unwrap();
 
-        // User module should have posts relation
+        // User module should have posts relation (OneToMany: other model "Post" -> "posts")
         assert!(code.contains("pub fn posts() -> RelationDef"));
         assert!(code.contains("pub fn include_posts() -> Include"));
 
-        // Post module should have author relation
-        assert!(code.contains("pub fn author() -> RelationDef"));
-        assert!(code.contains("pub fn include_author() -> Include"));
+        // Post module should have user relation (ManyToOne: FK references "User" -> "user")
+        assert!(code.contains("pub fn user() -> RelationDef"));
+        assert!(code.contains("pub fn include_user() -> Include"));
     }
 
     #[test]
@@ -800,10 +793,10 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
+                id    Int32  PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 name  Utf8?
-                score Int32  @default(0)
+                score Int32  DEFAULT 0
             }
         "#,
         )
@@ -825,7 +818,7 @@ mod tests {
         let schema = parse(
             r#"
             model User {
-                id    Int32  @id @autoincrement
+                id    Int32  PRIMARY KEY AUTOINCREMENT
                 email Utf8
                 score Int32
             }
@@ -844,8 +837,8 @@ mod tests {
         let schema = parse(
             r#"
             model UserProfile {
-                id Int32 @id
-                @@map("user_profiles")
+                id Int32 PRIMARY KEY
+                MAP "user_profiles"
             }
         "#,
         )
@@ -861,7 +854,7 @@ mod tests {
             r#"
             enum Role { User Admin }
             model Account {
-                id   Int32 @id
+                id   Int32 PRIMARY KEY
                 role Role
             }
         "#,

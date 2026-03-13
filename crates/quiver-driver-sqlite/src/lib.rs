@@ -724,10 +724,10 @@ mod tests {
             r#"
             enum Role { User Admin }
             model Account {
-                id    Int32  @id @autoincrement
-                email Utf8   @unique
-                role  Role   @default(User)
-                score Int32  @default(0)
+                id    Int32  PRIMARY KEY AUTOINCREMENT
+                email Utf8   UNIQUE
+                role  Role   DEFAULT User
+                score Int32  DEFAULT 0
             }
         "#,
         )
