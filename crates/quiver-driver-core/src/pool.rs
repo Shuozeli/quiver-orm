@@ -6,7 +6,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::{Connection, DdlStatement, DynConnection, Row, RowStream, Statement};
+use crate::{Connection, DdlStatement, DynConnection, Row, RowStream, Statement, Transactional};
 use quiver_error::QuiverError;
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -144,6 +144,21 @@ impl<C: Connection + 'static> Connection for PoolGuard<C> {
         stmt: &Statement,
     ) -> impl Future<Output = Result<RowStream, QuiverError>> + Send {
         self.inner().query_stream(stmt)
+    }
+}
+
+impl<C: Transactional + 'static> Transactional for PoolGuard<C> {
+    type Transaction<'a>
+        = C::Transaction<'a>
+    where
+        Self: 'a;
+
+    async fn begin(&mut self) -> Result<Self::Transaction<'_>, QuiverError> {
+        self.conn
+            .as_mut()
+            .expect("PoolGuard used after drop")
+            .begin()
+            .await
     }
 }
 
