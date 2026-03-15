@@ -73,7 +73,7 @@ model Post {
 # Type-safe Rust client (recommended -- generates typed queries, filters, structs)
 quiver generate schema.quiver -t rust-client -o src/generated/
 
-# Rust serde structs (data models only)
+# Rust serde structs + TryFrom<&Row> deserialization
 quiver generate schema.quiver -t rust-serde -o generated/
 
 # TypeScript types

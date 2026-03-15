@@ -170,7 +170,180 @@ impl Row {
     pub fn get_f64(&self, index: usize) -> Option<f64> {
         self.get(index)?.as_f64()
     }
+
+    // -- Named column accessors with error reporting --
+    // These return descriptive errors instead of Option, making them suitable
+    // for generated `TryFrom<&Row>` implementations where a missing/mistyped
+    // column should produce a clear diagnostic.
+
+    /// Get a required text column by name.
+    /// Returns empty string for NULL (matches SQLite DEFAULT "" behavior).
+    pub fn text(&self, col: &str) -> Result<String, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Text(s)) => Ok(s.clone()),
+            Some(Value::Null) => Ok(String::new()),
+            Some(other) => Err(RowError::type_mismatch(col, "text", other)),
+            None => Err(RowError::missing_column(col)),
+        }
+    }
+
+    /// Get an optional text column by name.
+    /// Returns None for NULL.
+    pub fn optional_text(&self, col: &str) -> Result<Option<String>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Text(s)) => Ok(Some(s.clone())),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(RowError::type_mismatch(col, "text", other)),
+        }
+    }
+
+    /// Get a required i32 column by name.
+    /// Returns 0 for NULL (matches SQLite DEFAULT 0 behavior).
+    pub fn int32(&self, col: &str) -> Result<i32, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Int(v)) => Ok(*v as i32),
+            Some(Value::UInt(v)) => Ok(*v as i32),
+            Some(Value::Null) => Ok(0),
+            Some(other) => Err(RowError::type_mismatch(col, "int", other)),
+            None => Err(RowError::missing_column(col)),
+        }
+    }
+
+    /// Get an optional i32 column by name.
+    /// Returns None for NULL.
+    pub fn optional_int32(&self, col: &str) -> Result<Option<i32>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Int(v)) => Ok(Some(*v as i32)),
+            Some(Value::UInt(v)) => Ok(Some(*v as i32)),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(RowError::type_mismatch(col, "int", other)),
+        }
+    }
+
+    /// Get a required i64 column by name.
+    /// Returns 0 for NULL.
+    pub fn int64(&self, col: &str) -> Result<i64, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Int(v)) => Ok(*v),
+            Some(Value::UInt(v)) => Ok(*v as i64),
+            Some(Value::Null) => Ok(0),
+            Some(other) => Err(RowError::type_mismatch(col, "int", other)),
+            None => Err(RowError::missing_column(col)),
+        }
+    }
+
+    /// Get an optional i64 column by name.
+    /// Returns None for NULL.
+    pub fn optional_int64(&self, col: &str) -> Result<Option<i64>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Int(v)) => Ok(Some(*v)),
+            Some(Value::UInt(v)) => Ok(Some(*v as i64)),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(RowError::type_mismatch(col, "int", other)),
+        }
+    }
+
+    /// Get a required f64 column by name.
+    /// Returns 0.0 for NULL.
+    pub fn float64(&self, col: &str) -> Result<f64, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Float(v)) => Ok(*v),
+            Some(Value::Int(v)) => Ok(*v as f64),
+            Some(Value::Null) => Ok(0.0),
+            Some(other) => Err(RowError::type_mismatch(col, "float", other)),
+            None => Err(RowError::missing_column(col)),
+        }
+    }
+
+    /// Get an optional f64 column by name.
+    /// Returns None for NULL.
+    pub fn optional_float64(&self, col: &str) -> Result<Option<f64>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Float(v)) => Ok(Some(*v)),
+            Some(Value::Int(v)) => Ok(Some(*v as f64)),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(RowError::type_mismatch(col, "float", other)),
+        }
+    }
+
+    /// Get a required bool column by name.
+    /// Handles both Bool and Int (0/1) representations (SQLite stores bools as integers).
+    /// Returns false for NULL.
+    pub fn boolean(&self, col: &str) -> Result<bool, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Bool(b)) => Ok(*b),
+            Some(Value::Int(v)) => Ok(*v != 0),
+            Some(Value::UInt(v)) => Ok(*v != 0),
+            Some(Value::Null) => Ok(false),
+            Some(other) => Err(RowError::type_mismatch(col, "bool", other)),
+            None => Err(RowError::missing_column(col)),
+        }
+    }
+
+    /// Get an optional bool column by name.
+    /// Returns None for NULL.
+    pub fn optional_boolean(&self, col: &str) -> Result<Option<bool>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Bool(b)) => Ok(Some(*b)),
+            Some(Value::Int(v)) => Ok(Some(*v != 0)),
+            Some(Value::UInt(v)) => Ok(Some(*v != 0)),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(RowError::type_mismatch(col, "bool", other)),
+        }
+    }
+
+    /// Get a required blob column by name.
+    /// Returns empty vec for NULL.
+    pub fn blob(&self, col: &str) -> Result<Vec<u8>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Blob(b)) => Ok(b.clone()),
+            Some(Value::Null) => Ok(Vec::new()),
+            Some(other) => Err(RowError::type_mismatch(col, "blob", other)),
+            None => Err(RowError::missing_column(col)),
+        }
+    }
+
+    /// Get an optional blob column by name.
+    /// Returns None for NULL.
+    pub fn optional_blob(&self, col: &str) -> Result<Option<Vec<u8>>, RowError> {
+        match self.get_by_name(col) {
+            Some(Value::Blob(b)) => Ok(Some(b.clone())),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(RowError::type_mismatch(col, "blob", other)),
+        }
+    }
 }
+
+/// Error type for row deserialization.
+///
+/// Produced by the typed `Row` accessor methods (`row.text()`, `row.int32()`, etc.)
+/// and by generated `TryFrom<&Row>` implementations from `quiver-codegen`.
+#[derive(Debug, Clone)]
+pub struct RowError {
+    pub message: String,
+}
+
+impl RowError {
+    pub fn missing_column(col: &str) -> Self {
+        Self {
+            message: format!("column '{}' not found in row", col),
+        }
+    }
+
+    pub fn type_mismatch(col: &str, expected: &str, got: &Value) -> Self {
+        Self {
+            message: format!("expected {} for column '{}', got {:?}", expected, col, got),
+        }
+    }
+}
+
+impl std::fmt::Display for RowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "row deserialization error: {}", self.message)
+    }
+}
+
+impl std::error::Error for RowError {}
 
 #[cfg(test)]
 mod tests {

@@ -25,7 +25,7 @@ pub use async_client::{BoxFut, QuiverClient, RetryPolicy};
 pub use pool::{DynPool, Pool, PoolConfig, PoolGuard};
 pub use sanitize::sanitize_connection_error;
 pub use stream::RowStream;
-pub use types::{Column, Row, Value};
+pub use types::{Column, Row, RowError, Value};
 
 // Re-export adbc so drivers and consumers can use the ADBC interface.
 pub use adbc;

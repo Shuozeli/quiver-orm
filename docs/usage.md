@@ -134,7 +134,7 @@ Generate code from a schema. Available targets:
 | Target | Alias | Output | Description |
 |--------|-------|--------|-------------|
 | rust-client | client | client.rs | Type-safe query helpers (field constants, filters, CreateData/UpdateData) |
-| rust-serde | rust | models.rs | Data structs with Serialize/Deserialize |
+| rust-serde | rust | models.rs | Data structs with Serialize/Deserialize + TryFrom\<&Row\> |
 | flatbuffers | fbs | schema.fbs | FlatBuffers schema |
 | protobuf | proto | schema.proto | Protobuf schema |
 | rust-fbs | -- | schema.fbs + schema_fbs.rs | FlatBuffers + Rust bindings |
@@ -143,6 +143,19 @@ Generate code from a schema. Available targets:
 | sql-sqlite | sqlite, sql | schema.sql | SQLite DDL |
 | sql-postgres | postgres | schema.sql | PostgreSQL DDL |
 | sql-mysql | mysql | schema.sql | MySQL DDL |
+
+The `rust-serde` target also generates `TryFrom<&Row>` implementations for
+each model, enabling automatic deserialization from query results:
+
+```rust
+// Generated: TryFrom<&Row> for User, TryFrom<&Row> for Post, etc.
+let rows = tx.query(&user::find_many().build()).await?;
+let users: Vec<User> = rows.iter().map(User::try_from).collect::<Result<_, _>>()?;
+```
+
+For enums, `Display` and `FromStr` implementations are also generated, so
+enum fields stored as text in the database are automatically parsed during
+row deserialization.
 
 ```bash
 # Type-safe Rust client (recommended for queries)
