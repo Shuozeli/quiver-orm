@@ -76,8 +76,12 @@ fn gen_enum(out: &mut String, e: &EnumDef) {
 fn gen_struct(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("#[derive(Debug, Clone, Serialize, Deserialize)]\n");
 
-    // Add serde rename_all if @@map is present (indicates non-Rust naming)
-    if get_map_name(&m.attributes).is_some() {
+    // Add serde rename_all = "camelCase" when field names differ from their
+    // snake_case equivalent (i.e., schema uses camelCase like "parentId" which
+    // becomes "parent_id" in Rust). This preserves the original naming when
+    // serializing to JSON. Also triggered by explicit @@map on the model.
+    let has_camel_case_fields = m.fields.iter().any(|f| f.name != to_snake(&f.name));
+    if get_map_name(&m.attributes).is_some() || has_camel_case_fields {
         out.push_str("#[serde(rename_all = \"camelCase\")]\n");
     }
 
