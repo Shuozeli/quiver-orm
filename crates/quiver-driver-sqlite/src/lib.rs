@@ -9,17 +9,27 @@ pub use adbc_sqlite;
 
 pub mod pool;
 
-use std::sync::Arc;
-
-use adbc::{ConnectionOption, DatabaseOption, OptionValue};
-use arrow_array::RecordBatch;
-use quiver_driver_core::arrow::{record_batch_to_rows, values_to_param_batch};
-use quiver_driver_core::{
-    Connection, DdlStatement, Driver, Row, RowStream, Statement, Transaction, Transactional,
-};
+use adbc::DatabaseOption;
+use adbc::OptionValue;
+use quiver_driver_core::{AdbcConnection, AdbcTransaction, BoxFuture, Dialect, Driver, adbc_err};
 use quiver_error::QuiverError;
 
 pub use pool::SqlitePool;
+
+/// SQLite dialect: uses `?` placeholders and handles multi-statement DDL natively.
+#[derive(Clone, Default)]
+pub struct SqliteDialect;
+
+impl Dialect for SqliteDialect {
+    type AdbcConn = adbc_sqlite::SqliteConnection;
+    // Default rewrite_sql (no-op) and split_ddl (false) are correct for SQLite.
+}
+
+/// A SQLite connection.
+pub type SqliteConnection = AdbcConnection<SqliteDialect>;
+
+/// An active SQLite transaction.
+pub type SqliteTransaction = AdbcTransaction<SqliteDialect>;
 
 /// SQLite driver factory.
 pub struct SqliteDriver;
@@ -27,375 +37,41 @@ pub struct SqliteDriver;
 impl Driver for SqliteDriver {
     type Conn = SqliteConnection;
 
-    async fn connect(&self, url: &str) -> Result<Self::Conn, QuiverError> {
-        let drv = adbc_sqlite::SqliteDriver;
-        let db = adbc::Driver::new_database_with_opts(
-            &drv,
-            [(DatabaseOption::Uri, OptionValue::String(url.into()))],
-        )
-        .await
-        .map_err(adbc_err)?;
-        let conn = adbc::Database::new_connection(&db)
+    fn connect<'a>(&'a self, url: &'a str) -> BoxFuture<'a, Result<Self::Conn, QuiverError>> {
+        Box::pin(async move {
+            let drv = adbc_sqlite::SqliteDriver;
+            let db = adbc::Driver::new_database_with_opts(
+                &drv,
+                [(DatabaseOption::Uri, OptionValue::String(url.into()))],
+            )
             .await
             .map_err(adbc_err)?;
+            let conn = adbc::Database::new_connection(&db)
+                .await
+                .map_err(adbc_err)?;
 
-        // Enable foreign keys (SQLite default is OFF)
-        let mut stmt = adbc::Connection::new_statement(&conn)
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut stmt, "PRAGMA foreign_keys = ON")
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::execute_update(&mut stmt)
-            .await
-            .map_err(adbc_err)?;
+            // Enable foreign keys (SQLite default is OFF)
+            let mut stmt = adbc::Connection::new_statement(&conn)
+                .await
+                .map_err(adbc_err)?;
+            adbc::Statement::set_sql_query(&mut stmt, "PRAGMA foreign_keys = ON")
+                .await
+                .map_err(adbc_err)?;
+            adbc::Statement::execute_update(&mut stmt)
+                .await
+                .map_err(adbc_err)?;
 
-        Ok(SqliteConnection {
-            conn: Arc::new(conn),
+            Ok(AdbcConnection::new(conn, SqliteDialect))
         })
     }
-}
-
-/// A SQLite connection wrapping an ADBC `SqliteConnection`.
-pub struct SqliteConnection {
-    conn: Arc<adbc_sqlite::SqliteConnection>,
-}
-
-impl SqliteConnection {
-    /// Create from an existing ADBC SQLite connection.
-    pub fn from_adbc(conn: adbc_sqlite::SqliteConnection) -> Self {
-        Self {
-            conn: Arc::new(conn),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Connection impl -- delegates to ADBC
-// ---------------------------------------------------------------------------
-
-impl Connection for SqliteConnection {
-    async fn execute(&self, stmt: &Statement) -> Result<u64, QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &stmt.sql)
-            .await
-            .map_err(adbc_err)?;
-
-        if !stmt.params.is_empty() {
-            let batch = params_to_batch(&stmt.params)?;
-            adbc::Statement::bind(&mut adbc_stmt, batch)
-                .await
-                .map_err(adbc_err)?;
-        }
-
-        let n = adbc::Statement::execute_update(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-        Ok(n as u64)
-    }
-
-    async fn query(&self, stmt: &Statement) -> Result<Vec<Row>, QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &stmt.sql)
-            .await
-            .map_err(adbc_err)?;
-
-        if !stmt.params.is_empty() {
-            let batch = params_to_batch(&stmt.params)?;
-            adbc::Statement::bind(&mut adbc_stmt, batch)
-                .await
-                .map_err(adbc_err)?;
-        }
-
-        let (reader, _) = adbc::Statement::execute(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-
-        let mut all_rows = Vec::new();
-        for batch_result in reader {
-            let batch = batch_result.map_err(|e| QuiverError::Driver(e.to_string()))?;
-            let rows = record_batch_to_rows(&batch)?;
-            all_rows.extend(rows);
-        }
-        Ok(all_rows)
-    }
-
-    async fn execute_ddl(&self, ddl: &DdlStatement) -> Result<(), QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &ddl.sql)
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::execute_update(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-        Ok(())
-    }
-
-    async fn query_stream(&self, stmt: &Statement) -> Result<RowStream, QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &stmt.sql)
-            .await
-            .map_err(adbc_err)?;
-
-        if !stmt.params.is_empty() {
-            let batch = params_to_batch(&stmt.params)?;
-            adbc::Statement::bind(&mut adbc_stmt, batch)
-                .await
-                .map_err(adbc_err)?;
-        }
-
-        let (reader, _) = adbc::Statement::execute(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-
-        let (tx, rx) = tokio::sync::mpsc::channel(256);
-
-        // The reader is Send, so we can process it in a blocking task
-        tokio::task::spawn_blocking(move || {
-            for batch_result in reader {
-                match batch_result {
-                    Ok(batch) => match record_batch_to_rows(&batch) {
-                        Ok(rows) => {
-                            for row in rows {
-                                if tx.blocking_send(Ok(row)).is_err() {
-                                    return; // receiver dropped
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = tx.blocking_send(Err(e));
-                            return;
-                        }
-                    },
-                    Err(e) => {
-                        let _ = tx.blocking_send(Err(QuiverError::Driver(e.to_string())));
-                        return;
-                    }
-                }
-            }
-        });
-
-        Ok(RowStream::from_receiver(rx))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Transaction support via ADBC autocommit toggling
-// ---------------------------------------------------------------------------
-
-impl Transactional for SqliteConnection {
-    type Transaction<'a> = SqliteTransaction;
-
-    async fn begin(&mut self) -> Result<Self::Transaction<'_>, QuiverError> {
-        adbc::Connection::set_option(self.conn.as_ref(), ConnectionOption::AutoCommit(false))
-            .await
-            .map_err(adbc_err)?;
-
-        Ok(SqliteTransaction {
-            conn: Arc::clone(&self.conn),
-            finished: false,
-        })
-    }
-}
-
-/// An active SQLite transaction.
-///
-/// Rolls back on drop unless `commit()` is called. Uses the ADBC connection's
-/// transaction management (autocommit toggle + commit/rollback).
-pub struct SqliteTransaction {
-    conn: Arc<adbc_sqlite::SqliteConnection>,
-    finished: bool,
-}
-
-impl Connection for SqliteTransaction {
-    async fn execute(&self, stmt: &Statement) -> Result<u64, QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &stmt.sql)
-            .await
-            .map_err(adbc_err)?;
-
-        if !stmt.params.is_empty() {
-            let batch = params_to_batch(&stmt.params)?;
-            adbc::Statement::bind(&mut adbc_stmt, batch)
-                .await
-                .map_err(adbc_err)?;
-        }
-
-        let n = adbc::Statement::execute_update(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-        Ok(n as u64)
-    }
-
-    async fn query(&self, stmt: &Statement) -> Result<Vec<Row>, QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &stmt.sql)
-            .await
-            .map_err(adbc_err)?;
-
-        if !stmt.params.is_empty() {
-            let batch = params_to_batch(&stmt.params)?;
-            adbc::Statement::bind(&mut adbc_stmt, batch)
-                .await
-                .map_err(adbc_err)?;
-        }
-
-        let (reader, _) = adbc::Statement::execute(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-
-        let mut all_rows = Vec::new();
-        for batch_result in reader {
-            let batch = batch_result.map_err(|e| QuiverError::Driver(e.to_string()))?;
-            let rows = record_batch_to_rows(&batch)?;
-            all_rows.extend(rows);
-        }
-        Ok(all_rows)
-    }
-
-    async fn execute_ddl(&self, ddl: &DdlStatement) -> Result<(), QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &ddl.sql)
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::execute_update(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-        Ok(())
-    }
-
-    async fn query_stream(&self, stmt: &Statement) -> Result<RowStream, QuiverError> {
-        let mut adbc_stmt = adbc::Connection::new_statement(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Statement::set_sql_query(&mut adbc_stmt, &stmt.sql)
-            .await
-            .map_err(adbc_err)?;
-
-        if !stmt.params.is_empty() {
-            let batch = params_to_batch(&stmt.params)?;
-            adbc::Statement::bind(&mut adbc_stmt, batch)
-                .await
-                .map_err(adbc_err)?;
-        }
-
-        let (reader, _) = adbc::Statement::execute(&mut adbc_stmt)
-            .await
-            .map_err(adbc_err)?;
-
-        let (tx, rx) = tokio::sync::mpsc::channel(256);
-
-        tokio::task::spawn_blocking(move || {
-            for batch_result in reader {
-                match batch_result {
-                    Ok(batch) => match record_batch_to_rows(&batch) {
-                        Ok(rows) => {
-                            for row in rows {
-                                if tx.blocking_send(Ok(row)).is_err() {
-                                    return;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = tx.blocking_send(Err(e));
-                            return;
-                        }
-                    },
-                    Err(e) => {
-                        let _ = tx.blocking_send(Err(QuiverError::Driver(e.to_string())));
-                        return;
-                    }
-                }
-            }
-        });
-
-        Ok(RowStream::from_receiver(rx))
-    }
-}
-
-impl Transaction for SqliteTransaction {
-    async fn commit(mut self) -> Result<(), QuiverError> {
-        self.finished = true;
-        adbc::Connection::commit(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Connection::set_option(self.conn.as_ref(), ConnectionOption::AutoCommit(true))
-            .await
-            .map_err(adbc_err)?;
-        Ok(())
-    }
-
-    async fn rollback(mut self) -> Result<(), QuiverError> {
-        self.finished = true;
-        adbc::Connection::rollback(self.conn.as_ref())
-            .await
-            .map_err(adbc_err)?;
-        adbc::Connection::set_option(self.conn.as_ref(), ConnectionOption::AutoCommit(true))
-            .await
-            .map_err(adbc_err)?;
-        Ok(())
-    }
-}
-
-impl Drop for SqliteTransaction {
-    fn drop(&mut self) {
-        if !self.finished {
-            let conn = Arc::clone(&self.conn);
-            let handle = std::thread::spawn(move || {
-                let rt = match tokio::runtime::Builder::new_current_thread().build() {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        eprintln!("quiver: failed to create rollback runtime: {e}");
-                        return;
-                    }
-                };
-                rt.block_on(async {
-                    let _ = adbc::Connection::rollback(conn.as_ref()).await;
-                    let _ = adbc::Connection::set_option(
-                        conn.as_ref(),
-                        ConnectionOption::AutoCommit(true),
-                    )
-                    .await;
-                });
-            });
-            let _ = handle.join();
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Convert Quiver `Value` params to a single-row `RecordBatch` for ADBC binding.
-fn params_to_batch(params: &[quiver_driver_core::Value]) -> Result<RecordBatch, QuiverError> {
-    let owned_names: Vec<String> = (0..params.len()).map(|i| format!("p{i}")).collect();
-    let name_refs: Vec<&str> = owned_names.iter().map(|s| s.as_str()).collect();
-    values_to_param_batch(params, &name_refs).map_err(|e| QuiverError::Driver(e.to_string()))
-}
-
-fn adbc_err(e: adbc::Error) -> QuiverError {
-    QuiverError::Driver(quiver_driver_core::sanitize_connection_error(&e.message))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quiver_driver_core::Value;
+    use quiver_driver_core::{
+        Connection, DdlStatement, Statement, Transaction, Transactional, Value,
+    };
 
     async fn mem_conn() -> SqliteConnection {
         SqliteDriver.connect(":memory:").await.unwrap()

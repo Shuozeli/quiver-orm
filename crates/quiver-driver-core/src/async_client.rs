@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use crate::{DdlStatement, Transaction, Transactional};
+use crate::{BoxFuture, DdlStatement, Transaction, Transactional};
 use quiver_error::QuiverError;
 
 /// A database client that enforces transactional access.
@@ -48,7 +48,7 @@ impl<C: Transactional> QuiverClient<C> {
     /// If the closure returns `Err`, the transaction is rolled back.
     pub async fn transaction<F, T>(&mut self, f: F) -> Result<T, QuiverError>
     where
-        F: for<'a> FnOnce(&'a C::Transaction<'_>) -> BoxFut<'a, Result<T, QuiverError>>,
+        F: for<'a> FnOnce(&'a C::Transaction<'_>) -> BoxFuture<'a, Result<T, QuiverError>>,
         T: Send,
     {
         let tx = self.conn.begin().await?;
@@ -78,7 +78,7 @@ impl<C: Transactional> QuiverClient<C> {
         f: F,
     ) -> Result<T, QuiverError>
     where
-        F: for<'a> Fn(&'a C::Transaction<'_>) -> BoxFut<'a, Result<T, QuiverError>> + Send,
+        F: for<'a> Fn(&'a C::Transaction<'_>) -> BoxFuture<'a, Result<T, QuiverError>> + Send,
         T: Send,
     {
         let mut attempts = 0u32;
@@ -143,6 +143,3 @@ impl Default for RetryPolicy {
         }
     }
 }
-
-/// Helper type alias for the boxed future used in transaction closures.
-pub type BoxFut<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;

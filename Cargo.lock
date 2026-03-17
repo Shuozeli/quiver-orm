@@ -1403,7 +1403,6 @@ version = "0.1.0"
 dependencies = [
  "adbc",
  "adbc-mysql",
- "arrow-array",
  "quiver-codegen",
  "quiver-driver-core",
  "quiver-error",
@@ -1417,7 +1416,6 @@ version = "0.1.0"
 dependencies = [
  "adbc",
  "adbc-postgres",
- "arrow-array",
  "quiver-codegen",
  "quiver-driver-core",
  "quiver-error",
@@ -1431,7 +1429,6 @@ version = "0.1.0"
 dependencies = [
  "adbc",
  "adbc-sqlite",
- "arrow-array",
  "quiver-codegen",
  "quiver-driver-core",
  "quiver-error",

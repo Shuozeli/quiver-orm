@@ -15,7 +15,6 @@ quiver-driver-core = { workspace = true }
 quiver-error = { workspace = true }
 adbc = { workspace = true }
 adbc-postgres = { workspace = true }
-arrow-array = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

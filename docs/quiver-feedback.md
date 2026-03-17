@@ -1,10 +1,11 @@
-<!-- agent-updated: 2026-03-13T04:45:00Z -->
+<!-- agent-updated: 2026-03-13T18:10:00Z -->
 
 # Quiver ORM Feedback
 
-Evaluation based on hands-on experimentation with quiver-orm across two versions:
+Evaluation based on hands-on experimentation with quiver-orm across three versions:
 - **v1** (commit `895ba9f`): sync-only drivers, no pooling
 - **v2** (commit `41cb0b3`): async-first drivers, connection pooling, `QuiverClient`
+- **v3** (commit `efc17aa`): schema syntax migrated from Prisma annotations to SQL keywords
 
 Tested against a simplified issue tracker schema (Component, Issue, Comment) using
 the SQLite driver with in-memory databases.
@@ -26,41 +27,41 @@ config {
 }
 
 model Component {
-    id                      Int32      @id @autoincrement
+    id                      Int32      PRIMARY KEY AUTOINCREMENT
     name                    Utf8
-    description             Utf8       @default("")
+    description             Utf8       DEFAULT ""
     parentId                Int32?
-    expandedAccessEnabled   Boolean    @default(true)
-    editableCommentsEnabled Boolean    @default(false)
-    createdAt               Utf8       @default(now())
-    updatedAt               Utf8       @default(now())
+    expandedAccessEnabled   Boolean    DEFAULT true
+    editableCommentsEnabled Boolean    DEFAULT false
+    createdAt               Utf8       DEFAULT now()
+    updatedAt               Utf8       DEFAULT now()
 }
 
 model Issue {
-    id            Int32    @id @autoincrement
+    id            Int32    PRIMARY KEY AUTOINCREMENT
     title         Utf8
-    description   Utf8     @default("")
-    status        Utf8     @default("NEW")
-    priority      Utf8     @default("P2")
+    description   Utf8     DEFAULT ""
+    status        Utf8     DEFAULT "NEW"
+    priority      Utf8     DEFAULT "P2"
     componentId   Int32
-    component     Component @relation(fields: [componentId], references: [id])
-    assignee      Utf8     @default("")
-    reporter      Utf8     @default("")
-    createdAt     Utf8     @default(now())
+    assignee      Utf8     DEFAULT ""
+    reporter      Utf8     DEFAULT ""
+    createdAt     Utf8     DEFAULT now()
 
-    @@index([componentId])
+    FOREIGN KEY (componentId) REFERENCES Component (id)
+    INDEX (componentId)
 }
 
 model Comment {
-    id            Int32    @id @autoincrement
+    id            Int32    PRIMARY KEY AUTOINCREMENT
     issueId       Int32
-    issue         Issue    @relation(fields: [issueId], references: [id])
     author        Utf8
     body          Utf8
-    hidden        Boolean  @default(false)
-    createdAt     Utf8     @default(now())
+    hidden        Boolean  DEFAULT false
+    createdAt     Utf8     DEFAULT now()
 
-    @@index([issueId])
+    FOREIGN KEY (issueId) REFERENCES Issue (id)
+    INDEX (issueId)
 }
 ```
 
@@ -323,47 +324,28 @@ let row = tx.query_one(&stmt).await?;
 
 ## Bugs Found
 
-### BUG: `count("*")` panics at runtime
+### RESOLVED: `count("*")` panics at runtime
 
 - **Severity:** Medium
-- **Status:** Still present in v2
-- **Reproduction:**
-  ```rust
-  let stmt = Query::table("Issue")
-      .aggregate()
-      .count("*")   // panics here
-      .build();
-  ```
-- **Error:** `SafeIdent` rejects `*` (only allows `[a-zA-Z0-9_]`).
-  Panic occurs inside `SafeIdent::new()` which calls `unwrap()`.
-- **Workaround:** `.count("id")` instead of `.count("*")`
-- **Recommendation:** Add `.count_all()` method or whitelist `*` in aggregate context.
-  At minimum, return `Result::Err` instead of panicking.
+- **Status:** Fixed -- `count("*")` now delegates to `CountAll`, and `count_all()` exists.
+- **Original Error:** `SafeIdent` rejected `*` (only allows `[a-zA-Z0-9_]`).
+- **Fix:** `count("*")` detects the star and uses `CountAll` internally.
+  `count_all()` is also available as an explicit alternative.
 
-### BUG: Create/Update do not return the modified row
+### BY DESIGN: Create/Update do not return the modified row
 
 - **Severity:** Medium
-- **Status:** Still present in v2
+- **Status:** By design -- Quiver intentionally does not support `RETURNING`.
 - **Description:** `tx.execute(&create_stmt)` returns `u64` (affected rows).
   Every Create/Update needs a follow-up SELECT to get the result.
-- **Impact:** 2x database roundtrips per write.
-- **Recommendation:** Add `RETURNING *` clause option (PostgreSQL + SQLite 3.35+ support it).
+- **Rationale:** `RETURNING` hides what should be an explicit read-after-write
+  in a transaction. Users should INSERT then SELECT within the same transaction.
+  This aligns with Quiver's biased ORM philosophy: no convenience shortcuts
+  that mask database interaction patterns.
 
-### BUG: `.gitmodules` deleted but submodule entry remains
+### RESOLVED: `.gitmodules` deleted but submodule entry remains
 
-- **Severity:** High (blocks git-based dependency resolution)
-- **Status:** New in v2 (commit `41cb0b3`)
-- **Description:** The `.gitmodules` file was removed but `arrow-adbc-rs` still appears
-  as a submodule entry in the git tree. Cargo fails with:
-  ```
-  no URL configured for submodule 'arrow-adbc-rs'
-  ```
-- **Impact:** Cannot use `git = "https://github.com/Shuozeli/quiver-orm.git"` in `Cargo.toml`.
-  Must use local path deps or vendored copies.
-- **Fix:** Either restore `.gitmodules` with the URL, or fully remove the submodule entry:
-  ```bash
-  git rm --cached arrow-adbc-rs
-  ```
+- **Status:** Fixed in v3 (commit `efc17aa`) -- `.gitmodules` restored.
 
 ## Issues Resolved in v2
 
@@ -385,45 +367,32 @@ Only `find_first()` and `find_many()`. Use `find_first().filter(Filter::eq("id",
 
 **Impact:** Minor -- functionally equivalent.
 
-### 2. No `@updatedAt` auto-population at query level
+### 2. No `@updatedAt` auto-population at query level (BY DESIGN)
 
-Must manually set timestamp on every update:
+Must manually set timestamp on every update. This is intentional per Quiver's
+"no implicit system calls" rule: timestamps, UUIDs, and other generated values
+must be explicitly provided by the user. This keeps behavior deterministic and
+testable.
 
 ```rust
 let stmt = Query::table("Component")
     .update()
     .set("status", Value::Text("IN_PROGRESS".into()))
-    .set("updatedAt", Value::Text(chrono::Utc::now().to_rfc3339()))  // manual!
+    .set("updatedAt", Value::Text(chrono::Utc::now().to_rfc3339()))  // explicit
     .filter(Filter::eq("id", Value::Int(1)))
     .build();
 ```
 
-### 3. No JSON/serde result mapping
+### RESOLVED: No JSON/serde result mapping
 
-Results are `Vec<Row>` with positional `values: Vec<Value>`. No built-in deserialization.
+The `gen_rust_serde` codegen target now generates typed structs with `TryFrom<Row>`
+implementations. Use `quiver-codegen` with the `RustSerde` target to generate
+deserializable structs from your `.quiver` schema.
 
-```rust
-// Manual mapping required for every model
-fn row_to_component(row: &Row) -> Component {
-    Component {
-        id: match &row.values[0] { Value::Int(v) => *v, _ => 0 },
-        name: match &row.values[1] { Value::Text(v) => v.clone(), _ => String::new() },
-        // ... every field by position
-    }
-}
-```
+### RESOLVED: Row results use positional indexing
 
-### 4. Row results use positional indexing
-
-No `Row::get("column_name")` convenience method. Must match by index or write a helper:
-
-```rust
-fn get_value<'a>(row: &'a Row, col: &str) -> Option<&'a Value> {
-    row.columns.iter()
-        .position(|c| c.name == col)
-        .map(|i| &row.values[i])
-}
-```
+`Row::get_by_name(name)` exists and returns `Option<&Value>` by column name.
+Named access has been available since v2.
 
 ### 5. No cursor-based pagination
 
@@ -599,9 +568,9 @@ Follow the phased migration in `.claude/rules/quiver-migration.md`:
 
 ## Recommendations for quiver-orm
 
-1. **Fix `.gitmodules` / submodule entry** -- git deps are broken; run `git rm --cached arrow-adbc-rs` or restore `.gitmodules`
-2. **Fix `count("*")` panic** -- Add `count_all()` or whitelist `*` in aggregate context
-3. **Return `Result` instead of panicking** -- `SafeIdent` validation must never crash
-4. **Add `Row::get(&str) -> Option<&Value>`** -- Positional indexing is error-prone
-5. **Add `RETURNING` support** -- Eliminates extra SELECT roundtrip after Create/Update
-6. **Update README examples** -- At least 3 API signatures in docs don't match actual code (`order`, `group_by`, `validate`)
+1. ~~**Fix `count("*")` panic**~~ -- RESOLVED: `count("*")` now delegates to `CountAll`
+2. ~~**Return `Result` instead of panicking**~~ -- `SafeIdent` panic is by design:
+   `const fn` + `&'static str` means bad identifiers are caught at compile/test time
+3. ~~**Add `Row::get(&str) -> Option<&Value>`**~~ -- RESOLVED: `Row::get_by_name()` exists
+4. ~~**Add `RETURNING` support**~~ -- BY DESIGN: not supported (explicit read-after-write)
+5. **Verify README examples match v3 API** -- Previous versions had discrepancies in `order`, `group_by`, `validate` signatures

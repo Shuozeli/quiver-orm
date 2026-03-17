@@ -6,7 +6,7 @@
 
 use arrow_array::RecordBatch;
 use quiver_driver_core::arrow::rows_to_record_batch;
-use quiver_driver_core::{DynConnection, Statement};
+use quiver_driver_core::{Connection, Statement};
 use quiver_error::QuiverError;
 
 /// Execute a query and return the result as an Arrow `RecordBatch`.
@@ -18,10 +18,10 @@ use quiver_error::QuiverError;
 /// Returns an empty `RecordBatch` (zero rows, empty schema) when the
 /// query produces no results.
 pub async fn query_arrow(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     stmt: &Statement,
 ) -> Result<RecordBatch, QuiverError> {
-    let rows = conn.dyn_query(stmt).await?;
+    let rows = conn.query(stmt).await?;
     rows_to_record_batch(&rows).map_err(|e| QuiverError::Driver(e.to_string()))
 }
 

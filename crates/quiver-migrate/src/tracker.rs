@@ -1,6 +1,6 @@
 //! Migration tracker -- records which migrations have been applied.
 
-use quiver_driver_core::{DdlStatement, DynConnection, Statement, Value};
+use quiver_driver_core::{Connection, DdlStatement, Statement, Value};
 use quiver_error::QuiverError;
 
 use crate::sql_gen::TrustedSql;
@@ -13,7 +13,7 @@ pub struct MigrationTracker;
 
 impl MigrationTracker {
     /// Ensure the migrations tracking table exists.
-    pub async fn ensure_table(conn: &dyn DynConnection) -> Result<(), QuiverError> {
+    pub async fn ensure_table(conn: &dyn Connection) -> Result<(), QuiverError> {
         let ddl = DdlStatement::new(format!(
             "CREATE TABLE IF NOT EXISTS \"{}\" (\
              id TEXT PRIMARY KEY, \
@@ -23,17 +23,17 @@ impl MigrationTracker {
              )",
             MIGRATIONS_TABLE
         ));
-        conn.dyn_execute_ddl(&ddl).await
+        conn.execute_ddl(&ddl).await
     }
 
     /// List all applied migration IDs in order.
-    pub async fn applied(conn: &dyn DynConnection) -> Result<Vec<String>, QuiverError> {
+    pub async fn applied(conn: &dyn Connection) -> Result<Vec<String>, QuiverError> {
         Self::ensure_table(conn).await?;
         let stmt = Statement::new(
             format!("SELECT id FROM \"{}\" ORDER BY id ASC", MIGRATIONS_TABLE),
             Vec::new(),
         );
-        let rows = conn.dyn_query(&stmt).await?;
+        let rows = conn.query(&stmt).await?;
         let mut ids = Vec::new();
         for row in rows {
             if let Some(Value::Text(id)) = row.values.first() {
@@ -45,7 +45,7 @@ impl MigrationTracker {
 
     /// Check if a specific migration has been applied.
     pub async fn is_applied(
-        conn: &dyn DynConnection,
+        conn: &dyn Connection,
         migration_id: &str,
     ) -> Result<bool, QuiverError> {
         Self::ensure_table(conn).await?;
@@ -53,7 +53,7 @@ impl MigrationTracker {
             format!("SELECT COUNT(*) FROM \"{}\" WHERE id = ?", MIGRATIONS_TABLE),
             vec![Value::Text(migration_id.to_string())],
         );
-        let row = conn.dyn_query_one(&stmt).await?;
+        let row = conn.query_one(&stmt).await?;
         match row.values.first() {
             Some(Value::Int(n)) => Ok(*n > 0),
             _ => Ok(false),
@@ -64,7 +64,7 @@ impl MigrationTracker {
     ///
     /// `applied_at` must be provided by the caller (no implicit system time).
     pub async fn record_applied(
-        conn: &dyn DynConnection,
+        conn: &dyn Connection,
         migration: &Migration,
         applied_at: &str,
     ) -> Result<(), QuiverError> {
@@ -82,13 +82,13 @@ impl MigrationTracker {
                 Value::Text(checksum),
             ],
         );
-        conn.dyn_execute(&stmt).await?;
+        conn.execute(&stmt).await?;
         Ok(())
     }
 
     /// Remove a migration record (for rollback).
     pub async fn record_reverted(
-        conn: &dyn DynConnection,
+        conn: &dyn Connection,
         migration_id: &str,
     ) -> Result<(), QuiverError> {
         Self::ensure_table(conn).await?;
@@ -96,7 +96,7 @@ impl MigrationTracker {
             format!("DELETE FROM \"{}\" WHERE id = ?", MIGRATIONS_TABLE),
             vec![Value::Text(migration_id.to_string())],
         );
-        conn.dyn_execute(&stmt).await?;
+        conn.execute(&stmt).await?;
         Ok(())
     }
 
@@ -109,15 +109,12 @@ impl MigrationTracker {
     /// is split on `";\n"`. Sub-statements without `?` placeholders are executed
     /// as DDL; sub-statements with placeholders are executed with the
     /// corresponding slice of bind parameters.
-    async fn exec_trusted(
-        conn: &dyn DynConnection,
-        trusted: &TrustedSql,
-    ) -> Result<(), QuiverError> {
+    async fn exec_trusted(conn: &dyn Connection, trusted: &TrustedSql) -> Result<(), QuiverError> {
         if trusted.has_params() {
             let parts: Vec<&str> = trusted.sql.split(";\n").collect();
             if parts.len() == 1 {
                 let stmt = Statement::new(trusted.sql.clone(), trusted.params.clone());
-                conn.dyn_execute(&stmt).await?;
+                conn.execute(&stmt).await?;
             } else {
                 let mut param_idx = 0;
                 for part in &parts {
@@ -127,7 +124,7 @@ impl MigrationTracker {
                     }
                     let q_count = trimmed.matches('?').count();
                     if q_count == 0 {
-                        conn.dyn_execute_ddl(&DdlStatement::new(trimmed.to_string()))
+                        conn.execute_ddl(&DdlStatement::new(trimmed.to_string()))
                             .await?;
                     } else {
                         let end = param_idx + q_count;
@@ -142,7 +139,7 @@ impl MigrationTracker {
                         let params = trusted.params[param_idx..end].to_vec();
                         param_idx = end;
                         let stmt = Statement::new(trimmed.to_string(), params);
-                        conn.dyn_execute(&stmt).await?;
+                        conn.execute(&stmt).await?;
                     }
                 }
             }
@@ -150,7 +147,7 @@ impl MigrationTracker {
             for part in trusted.sql.split(";\n") {
                 let trimmed = part.trim();
                 if !trimmed.is_empty() {
-                    conn.dyn_execute_ddl(&DdlStatement::new(trimmed.to_string()))
+                    conn.execute_ddl(&DdlStatement::new(trimmed.to_string()))
                         .await?;
                 }
             }
@@ -162,7 +159,7 @@ impl MigrationTracker {
     ///
     /// `applied_at` must be provided by the caller.
     pub async fn apply(
-        conn: &dyn DynConnection,
+        conn: &dyn Connection,
         migration: &Migration,
         applied_at: &str,
     ) -> Result<(), QuiverError> {
@@ -182,10 +179,7 @@ impl MigrationTracker {
     }
 
     /// Rollback a migration: execute all `down` statements and remove the record.
-    pub async fn rollback(
-        conn: &dyn DynConnection,
-        migration: &Migration,
-    ) -> Result<(), QuiverError> {
+    pub async fn rollback(conn: &dyn Connection, migration: &Migration) -> Result<(), QuiverError> {
         if !Self::is_applied(conn, &migration.id).await? {
             return Err(QuiverError::Migration(format!(
                 "Migration '{}' is not applied",

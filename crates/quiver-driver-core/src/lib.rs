@@ -9,20 +9,26 @@
 //!    interface following the Arrow Database Connectivity specification. Drivers
 //!    that implement ADBC traits can interoperate with any ADBC-compatible tool.
 //!
-//! All Quiver traits are async. For dyn dispatch, use `DynConnection` which
-//! wraps async methods in boxed futures.
+//! All Quiver traits are async and use `BoxFuture` for object safety.
+//! `dyn Connection` can be used directly for dynamic dispatch.
 
 pub mod arrow;
 mod async_api;
 mod async_client;
+pub mod dialect;
+mod generic_conn;
+pub mod helpers;
 pub mod pool;
 mod sanitize;
 mod stream;
 mod types;
 
-pub use async_api::{Connection, Driver, DynConnection, Transaction, Transactional};
-pub use async_client::{BoxFut, QuiverClient, RetryPolicy};
-pub use pool::{DynPool, Pool, PoolConfig, PoolGuard};
+pub use async_api::{BoxFuture, Connection, Driver, Transaction, Transactional};
+pub use async_client::{QuiverClient, RetryPolicy};
+pub use dialect::Dialect;
+pub use generic_conn::{AdbcConnection, AdbcTransaction};
+pub use helpers::{adbc_err, params_to_batch};
+pub use pool::{Pool, PoolConfig, PoolGuard};
 pub use sanitize::sanitize_connection_error;
 pub use stream::RowStream;
 pub use types::{Column, Row, RowError, Value};

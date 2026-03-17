@@ -4,60 +4,39 @@
 //! an mpsc channel. Each connection is returned to the pool when the
 //! [`PoolGuard`] is dropped.
 
-use quiver_driver_core::{Pool, PoolConfig, PoolGuard};
+use quiver_driver_core::pool::DriverPool;
+use quiver_driver_core::{BoxFuture, PoolConfig, PoolGuard};
 use quiver_error::QuiverError;
 
 use crate::{SqliteConnection, SqliteDriver};
 
 /// A pool of SQLite connections.
 pub struct SqlitePool {
-    rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<SqliteConnection>>,
-    tx: tokio::sync::mpsc::Sender<SqliteConnection>,
-    max_size: usize,
+    inner: DriverPool<SqliteDriver>,
 }
 
 impl SqlitePool {
     /// Create a new pool, eagerly opening `config.max_connections` connections.
     pub async fn new(config: PoolConfig) -> Result<Self, QuiverError> {
-        use quiver_driver_core::Driver;
-
-        let (tx, rx) = tokio::sync::mpsc::channel(config.max_connections);
-
-        for _ in 0..config.max_connections {
-            let conn = SqliteDriver.connect(&config.url).await?;
-            tx.send(conn)
-                .await
-                .map_err(|_| QuiverError::Driver("failed to initialize pool".into()))?;
-        }
-
         Ok(Self {
-            rx: tokio::sync::Mutex::new(rx),
-            tx,
-            max_size: config.max_connections,
+            inner: DriverPool::new(config, SqliteDriver).await?,
         })
     }
 }
 
-impl Pool for SqlitePool {
+impl quiver_driver_core::Pool for SqlitePool {
     type Conn = SqliteConnection;
 
-    async fn acquire(&self) -> Result<PoolGuard<SqliteConnection>, QuiverError> {
-        let mut rx = self.rx.lock().await;
-        let conn = rx
-            .recv()
-            .await
-            .ok_or_else(|| QuiverError::Driver("pool closed".into()))?;
-        Ok(PoolGuard::new(conn, self.tx.clone()))
+    fn acquire(&self) -> BoxFuture<'_, Result<PoolGuard<SqliteConnection>, QuiverError>> {
+        Box::pin(async { self.inner.acquire().await })
     }
 
     fn idle_count(&self) -> usize {
-        // Channel length approximates idle connections. Not exact under
-        // contention but good enough for monitoring.
-        self.tx.capacity() - (self.tx.max_capacity() - self.max_size)
+        self.inner.idle_count()
     }
 
     fn max_size(&self) -> usize {
-        self.max_size
+        self.inner.max_size()
     }
 }
 

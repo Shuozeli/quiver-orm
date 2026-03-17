@@ -770,10 +770,14 @@ pub struct AggregateBuilder {
 }
 
 impl AggregateBuilder {
-    /// Add COUNT(column).
+    /// Add COUNT(column). Passing `"*"` is equivalent to [`count_all()`](Self::count_all).
     pub fn count(mut self, column: &'static str) -> Self {
-        self.aggregates
-            .push(AggregateFunc::Count(SafeIdent::new(column)));
+        if column == "*" {
+            self.aggregates.push(AggregateFunc::CountAll);
+        } else {
+            self.aggregates
+                .push(AggregateFunc::Count(SafeIdent::new(column)));
+        }
         self
     }
 
@@ -1174,6 +1178,12 @@ mod tests {
     #[test]
     fn aggregate_count_all() {
         let q = Query::table("User").aggregate().count_all().build();
+        assert_eq!(q.sql, "SELECT COUNT(*) AS \"_count\" FROM \"User\"");
+    }
+
+    #[test]
+    fn aggregate_count_star_delegates_to_count_all() {
+        let q = Query::table("User").aggregate().count("*").build();
         assert_eq!(q.sql, "SELECT COUNT(*) AS \"_count\" FROM \"User\"");
     }
 

@@ -3,7 +3,7 @@
 //! Relations are defined by schema `FOREIGN KEY` constraints. This module provides
 //! types to describe relations and execute eager-load queries.
 
-use quiver_driver_core::{DynConnection, Row, Statement, Value};
+use quiver_driver_core::{Connection, Row, Statement, Value};
 use quiver_error::QuiverError;
 
 use crate::builder::build_find_many_internal;
@@ -77,11 +77,11 @@ pub struct RowWithRelations {
 /// Strategy: run the parent query first, collect FK values, then run one
 /// query per relation using `IN (...)` to batch-load related rows.
 pub async fn find_with_includes(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     parent_query: &Statement,
     includes: &[Include],
 ) -> Result<Vec<RowWithRelations>, QuiverError> {
-    let parent_rows = conn.dyn_query(parent_query).await?;
+    let parent_rows = conn.query(parent_query).await?;
 
     if parent_rows.is_empty() || includes.is_empty() {
         return Ok(parent_rows
@@ -110,7 +110,7 @@ pub async fn find_with_includes(
 
 /// Load a single relation for a set of parent rows.
 fn load_relation<'a>(
-    conn: &'a dyn DynConnection,
+    conn: &'a dyn Connection,
     parent_results: &'a mut [RowWithRelations],
     include: &'a Include,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), QuiverError>> + Send + 'a>> {
@@ -128,7 +128,7 @@ fn load_relation<'a>(
 
 /// Parent holds FK columns -> collect FK values, query related table by reference columns.
 async fn load_fk_side(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     parent_results: &mut [RowWithRelations],
     include: &Include,
 ) -> Result<(), QuiverError> {
@@ -167,7 +167,7 @@ async fn load_fk_side(
     let filter = Filter::in_ident(ref_ident, unique_values);
     let child_query = build_find_many_internal(&rel.to_model, Some(filter));
 
-    let child_rows = conn.dyn_query(&child_query).await?;
+    let child_rows = conn.query(&child_query).await?;
 
     let mut child_results: Vec<RowWithRelations> = child_rows
         .into_iter()
@@ -202,7 +202,7 @@ async fn load_fk_side(
 
 /// Related table holds FK -> collect parent PK values, query related table by FK columns.
 async fn load_reverse_side(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     parent_results: &mut [RowWithRelations],
     include: &Include,
 ) -> Result<(), QuiverError> {
@@ -238,7 +238,7 @@ async fn load_reverse_side(
     let filter = Filter::in_ident(fk_ident, unique_values);
     let child_query = build_find_many_internal(&rel.to_model, Some(filter));
 
-    let child_rows = conn.dyn_query(&child_query).await?;
+    let child_rows = conn.query(&child_query).await?;
 
     let mut child_results: Vec<RowWithRelations> = child_rows
         .into_iter()

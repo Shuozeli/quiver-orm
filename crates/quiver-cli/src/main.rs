@@ -3,7 +3,7 @@ use quiver_codegen::{
     FbsGenerator, ProtoGenerator, RustClientGenerator, RustFbsGenerator, RustProtoGenerator,
     RustSerdeGenerator, SqlDialect, SqlGenerator, TypeScriptGenerator,
 };
-use quiver_driver_core::{DdlStatement, Driver, DynConnection};
+use quiver_driver_core::{Connection, DdlStatement, Driver};
 use quiver_error::QuiverError;
 use quiver_migrate::{
     MigrationSqlGenerator, MigrationStep, MigrationTracker, TrustedSql, diff_schemas, introspect,
@@ -194,7 +194,7 @@ fn migrate_dialect_for_provider(provider: &str) -> Result<quiver_migrate::SqlDia
 }
 
 /// Connect to the database and return a type-erased connection.
-async fn connect(provider: &str, url: &str) -> Result<Box<dyn DynConnection>, QuiverError> {
+async fn connect(provider: &str, url: &str) -> Result<Box<dyn Connection>, QuiverError> {
     match provider {
         "sqlite" => {
             let conn = quiver_driver_sqlite::SqliteDriver.connect(url).await?;
@@ -556,7 +556,7 @@ async fn cmd_db_execute(schema_path: &Path, sql: &str) -> Result<(), QuiverError
     let trimmed = sql.trim().to_uppercase();
     if trimmed.starts_with("SELECT") || trimmed.starts_with("WITH") {
         let stmt = quiver_driver_core::Statement::sql(sql.to_string());
-        let rows = conn.dyn_query(&stmt).await?;
+        let rows = conn.query(&stmt).await?;
 
         if rows.is_empty() {
             println!("(0 rows)");
@@ -583,7 +583,7 @@ async fn cmd_db_execute(schema_path: &Path, sql: &str) -> Result<(), QuiverError
         println!("({} row(s))", rows.len());
     } else {
         let stmt = quiver_driver_core::Statement::sql(sql.to_string());
-        let affected = conn.dyn_execute(&stmt).await?;
+        let affected = conn.execute(&stmt).await?;
         println!("{affected} row(s) affected.");
     }
 
@@ -607,18 +607,18 @@ fn format_value(v: &quiver_driver_core::Value) -> String {
     }
 }
 
-async fn exec_trusted(conn: &dyn DynConnection, trusted: &TrustedSql) -> Result<(), QuiverError> {
+async fn exec_trusted(conn: &dyn Connection, trusted: &TrustedSql) -> Result<(), QuiverError> {
     if trusted.params.is_empty() {
         for part in trusted.sql.split(";\n") {
             let trimmed = part.trim();
             if !trimmed.is_empty() {
-                conn.dyn_execute_ddl(&DdlStatement::new(trimmed.to_string()))
+                conn.execute_ddl(&DdlStatement::new(trimmed.to_string()))
                     .await?;
             }
         }
     } else {
         let stmt = quiver_driver_core::Statement::new(trusted.sql.clone(), trusted.params.clone());
-        conn.dyn_execute(&stmt).await?;
+        conn.execute(&stmt).await?;
     }
     Ok(())
 }

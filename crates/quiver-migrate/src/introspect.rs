@@ -3,7 +3,7 @@
 //! Connects to an existing database and reverse-engineers the table definitions
 //! into a [`Schema`] AST that can be serialized to a `.quiver` file.
 
-use quiver_driver_core::{DynConnection, Row, Statement, Value};
+use quiver_driver_core::{Connection, Row, Statement, Value};
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
@@ -11,10 +11,7 @@ use quiver_schema::ast::*;
 use crate::sql_gen::{SqlDialect, validate_safe_ident};
 
 /// Introspect a database and produce a Quiver schema.
-pub async fn introspect(
-    conn: &dyn DynConnection,
-    dialect: SqlDialect,
-) -> Result<Schema, QuiverError> {
+pub async fn introspect(conn: &dyn Connection, dialect: SqlDialect) -> Result<Schema, QuiverError> {
     match dialect {
         SqlDialect::Sqlite => introspect_sqlite(conn).await,
         SqlDialect::Postgres => introspect_postgres(conn).await,
@@ -22,7 +19,7 @@ pub async fn introspect(
     }
 }
 
-async fn introspect_sqlite(conn: &dyn DynConnection) -> Result<Schema, QuiverError> {
+async fn introspect_sqlite(conn: &dyn Connection) -> Result<Schema, QuiverError> {
     let tables = list_sqlite_tables(conn).await?;
     let mut models = Vec::new();
     let mut enums = Vec::new();
@@ -89,7 +86,7 @@ async fn introspect_sqlite(conn: &dyn DynConnection) -> Result<Schema, QuiverErr
 }
 
 async fn introspect_sqlite_table(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table_name: &str,
     enums: &[EnumDef],
 ) -> Result<ModelDef, QuiverError> {
@@ -173,7 +170,7 @@ async fn introspect_sqlite_table(
 
 // --- PostgreSQL introspection ---
 
-async fn introspect_postgres(conn: &dyn DynConnection) -> Result<Schema, QuiverError> {
+async fn introspect_postgres(conn: &dyn Connection) -> Result<Schema, QuiverError> {
     let tables = list_pg_tables(conn).await?;
     let pg_enums = list_pg_enums(conn).await?;
     let mut models = Vec::new();
@@ -234,7 +231,7 @@ async fn introspect_postgres(conn: &dyn DynConnection) -> Result<Schema, QuiverE
 }
 
 async fn introspect_pg_table(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table_name: &str,
     enum_type_names: &[String],
 ) -> Result<ModelDef, QuiverError> {
@@ -314,11 +311,11 @@ async fn introspect_pg_table(
     })
 }
 
-async fn list_pg_tables(conn: &dyn DynConnection) -> Result<Vec<String>, QuiverError> {
+async fn list_pg_tables(conn: &dyn Connection) -> Result<Vec<String>, QuiverError> {
     let stmt = Statement::sql(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name".to_string(),
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| match r.values.first() {
@@ -336,10 +333,7 @@ struct PgColumn {
     udt_name: String,
 }
 
-async fn list_pg_columns(
-    conn: &dyn DynConnection,
-    table: &str,
-) -> Result<Vec<PgColumn>, QuiverError> {
+async fn list_pg_columns(conn: &dyn Connection, table: &str) -> Result<Vec<PgColumn>, QuiverError> {
     let stmt = Statement::new(
         "SELECT column_name, data_type, is_nullable, column_default, udt_name \
          FROM information_schema.columns \
@@ -348,7 +342,7 @@ async fn list_pg_columns(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     let mut columns = Vec::new();
     for row in rows {
@@ -374,7 +368,7 @@ async fn list_pg_columns(
 }
 
 async fn list_pg_primary_keys(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<String>, QuiverError> {
     let stmt = Statement::new(
@@ -390,7 +384,7 @@ async fn list_pg_primary_keys(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| match r.values.first() {
@@ -407,7 +401,7 @@ struct ForeignKeyInfo {
 }
 
 async fn list_pg_foreign_keys(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<ForeignKeyInfo>, QuiverError> {
     let stmt = Statement::new(
@@ -425,7 +419,7 @@ async fn list_pg_foreign_keys(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .iter()
         .map(|r| ForeignKeyInfo {
@@ -442,17 +436,14 @@ struct PgIndex {
     is_primary: bool,
 }
 
-async fn list_pg_indexes(
-    conn: &dyn DynConnection,
-    table: &str,
-) -> Result<Vec<PgIndex>, QuiverError> {
+async fn list_pg_indexes(conn: &dyn Connection, table: &str) -> Result<Vec<PgIndex>, QuiverError> {
     let stmt = Statement::new(
         "SELECT indexname, indexdef FROM pg_indexes \
          WHERE tablename = $1 AND schemaname = 'public'"
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     let mut indexes = Vec::new();
     for row in &rows {
@@ -496,7 +487,7 @@ fn parse_pg_index_columns(indexdef: &str) -> Vec<String> {
     Vec::new()
 }
 
-async fn list_pg_enums(conn: &dyn DynConnection) -> Result<Vec<(String, String)>, QuiverError> {
+async fn list_pg_enums(conn: &dyn Connection) -> Result<Vec<(String, String)>, QuiverError> {
     let stmt = Statement::sql(
         "SELECT t.typname, e.enumlabel \
          FROM pg_type t \
@@ -504,7 +495,7 @@ async fn list_pg_enums(conn: &dyn DynConnection) -> Result<Vec<(String, String)>
          ORDER BY t.typname, e.enumsortorder"
             .to_string(),
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .iter()
         .map(|r| (text_at(r, 0), text_at(r, 1)))
@@ -621,7 +612,7 @@ fn pg_table_name_for(model: &ModelDef) -> String {
 
 // --- MySQL introspection ---
 
-async fn introspect_mysql(conn: &dyn DynConnection) -> Result<Schema, QuiverError> {
+async fn introspect_mysql(conn: &dyn Connection) -> Result<Schema, QuiverError> {
     let tables = list_mysql_tables(conn).await?;
     let mut models = Vec::new();
     let mut enums: Vec<EnumDef> = Vec::new();
@@ -666,7 +657,7 @@ async fn introspect_mysql(conn: &dyn DynConnection) -> Result<Schema, QuiverErro
 }
 
 async fn introspect_mysql_table(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table_name: &str,
 ) -> Result<(ModelDef, Vec<EnumDef>), QuiverError> {
     let columns = list_mysql_columns(conn, table_name).await?;
@@ -749,14 +740,14 @@ async fn introspect_mysql_table(
     ))
 }
 
-async fn list_mysql_tables(conn: &dyn DynConnection) -> Result<Vec<String>, QuiverError> {
+async fn list_mysql_tables(conn: &dyn Connection) -> Result<Vec<String>, QuiverError> {
     let stmt = Statement::sql(
         "SELECT table_name FROM information_schema.tables \
          WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' \
          ORDER BY table_name"
             .to_string(),
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| match r.values.first() {
@@ -776,7 +767,7 @@ struct MysqlColumn {
 }
 
 async fn list_mysql_columns(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<MysqlColumn>, QuiverError> {
     let stmt = Statement::new(
@@ -787,7 +778,7 @@ async fn list_mysql_columns(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     let mut columns = Vec::new();
     for row in rows {
@@ -815,7 +806,7 @@ async fn list_mysql_columns(
 }
 
 async fn list_mysql_primary_keys(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<String>, QuiverError> {
     let stmt = Statement::new(
@@ -831,7 +822,7 @@ async fn list_mysql_primary_keys(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| match r.values.first() {
@@ -842,7 +833,7 @@ async fn list_mysql_primary_keys(
 }
 
 async fn list_mysql_foreign_keys(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<ForeignKeyInfo>, QuiverError> {
     let stmt = Statement::new(
@@ -854,7 +845,7 @@ async fn list_mysql_foreign_keys(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .iter()
         .map(|r| ForeignKeyInfo {
@@ -872,7 +863,7 @@ struct MysqlIndex {
 }
 
 async fn list_mysql_indexes(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<MysqlIndex>, QuiverError> {
     let stmt = Statement::new(
@@ -883,7 +874,7 @@ async fn list_mysql_indexes(
             .to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     // Group by index_name
     let mut index_map: Vec<(String, bool, bool, Vec<String>)> = Vec::new();
@@ -1088,11 +1079,11 @@ fn mysql_table_name_for(model: &ModelDef) -> String {
 
 // --- SQLite metadata queries ---
 
-async fn list_sqlite_tables(conn: &dyn DynConnection) -> Result<Vec<String>, QuiverError> {
+async fn list_sqlite_tables(conn: &dyn Connection) -> Result<Vec<String>, QuiverError> {
     let stmt = Statement::sql(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name".to_string(),
     );
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| match r.values.first() {
@@ -1111,12 +1102,12 @@ struct SqliteColumn {
 }
 
 async fn list_sqlite_columns(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<SqliteColumn>, QuiverError> {
     validate_safe_ident(table)?;
     let stmt = Statement::sql(format!("PRAGMA table_info(\"{}\")", table));
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     // Check for AUTOINCREMENT in the CREATE TABLE SQL
     let create_sql = get_create_sql(conn, table).await?;
@@ -1148,13 +1139,10 @@ async fn list_sqlite_columns(
     Ok(columns)
 }
 
-async fn sqlite_pk_columns(
-    conn: &dyn DynConnection,
-    table: &str,
-) -> Result<Vec<String>, QuiverError> {
+async fn sqlite_pk_columns(conn: &dyn Connection, table: &str) -> Result<Vec<String>, QuiverError> {
     validate_safe_ident(table)?;
     let stmt = Statement::sql(format!("PRAGMA table_info(\"{}\")", table));
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     let mut pk_cols: Vec<(i64, String)> = Vec::new();
     for row in rows {
@@ -1175,12 +1163,12 @@ struct SqliteIndex {
 }
 
 async fn sqlite_indexes(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<SqliteIndex>, QuiverError> {
     validate_safe_ident(table)?;
     let stmt = Statement::sql(format!("PRAGMA index_list(\"{}\")", table));
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     let mut indexes = Vec::new();
     for row in rows {
@@ -1205,7 +1193,7 @@ async fn sqlite_indexes(
 
         validate_safe_ident(&idx_name)?;
         let col_stmt = Statement::sql(format!("PRAGMA index_info(\"{}\")", idx_name));
-        let col_rows = conn.dyn_query(&col_stmt).await?;
+        let col_rows = conn.query(&col_stmt).await?;
         let columns: Vec<String> = col_rows.iter().map(|r| text_at(r, 2)).collect();
 
         if !columns.is_empty() {
@@ -1217,12 +1205,12 @@ async fn sqlite_indexes(
 }
 
 async fn sqlite_unique_columns(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<String>, QuiverError> {
     validate_safe_ident(table)?;
     let stmt = Statement::sql(format!("PRAGMA index_list(\"{}\")", table));
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     let mut unique_cols = Vec::new();
     for row in rows {
@@ -1235,7 +1223,7 @@ async fn sqlite_unique_columns(
 
         validate_safe_ident(&idx_name)?;
         let col_stmt = Statement::sql(format!("PRAGMA index_info(\"{}\")", idx_name));
-        let col_rows = conn.dyn_query(&col_stmt).await?;
+        let col_rows = conn.query(&col_stmt).await?;
 
         // Only mark as UNIQUE if single-column unique index
         if col_rows.len() == 1 {
@@ -1253,12 +1241,12 @@ struct ForeignKey {
 }
 
 async fn list_sqlite_foreign_keys(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     table: &str,
 ) -> Result<Vec<ForeignKey>, QuiverError> {
     validate_safe_ident(table)?;
     let stmt = Statement::sql(format!("PRAGMA foreign_key_list(\"{}\")", table));
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
 
     Ok(rows
         .iter()
@@ -1270,15 +1258,12 @@ async fn list_sqlite_foreign_keys(
         .collect())
 }
 
-async fn get_create_sql(
-    conn: &dyn DynConnection,
-    table: &str,
-) -> Result<Option<String>, QuiverError> {
+async fn get_create_sql(conn: &dyn Connection, table: &str) -> Result<Option<String>, QuiverError> {
     let stmt = Statement::new(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1".to_string(),
         vec![Value::Text(table.to_string())],
     );
-    let row = conn.dyn_query_optional(&stmt).await?;
+    let row = conn.query_optional(&stmt).await?;
     Ok(row.and_then(|r| match r.values.into_iter().next() {
         Some(Value::Text(s)) => Some(s),
         _ => None,
@@ -1286,7 +1271,7 @@ async fn get_create_sql(
 }
 
 async fn read_enum_values(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     enum_table: &str,
 ) -> Result<Vec<String>, QuiverError> {
     validate_safe_ident(enum_table)?;
@@ -1294,7 +1279,7 @@ async fn read_enum_values(
         "SELECT value FROM \"{}\" ORDER BY rowid",
         enum_table
     ));
-    let rows = conn.dyn_query(&stmt).await?;
+    let rows = conn.query(&stmt).await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| match r.values.into_iter().next() {

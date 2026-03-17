@@ -3,13 +3,10 @@
 //! Provides a [`Pool`] trait for managing reusable database connections
 //! and a [`PoolGuard`] that returns connections to the pool on drop.
 
-use std::future::Future;
-use std::pin::Pin;
-
-use crate::{Connection, DdlStatement, DynConnection, Row, RowStream, Statement, Transactional};
+use crate::{
+    BoxFuture, Connection, DdlStatement, Driver, Row, RowStream, Statement, Transactional,
+};
 use quiver_error::QuiverError;
-
-type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Configuration for a connection pool.
 #[derive(Debug, Clone)]
@@ -41,48 +38,13 @@ pub trait Pool: Send + Sync {
     ///
     /// Waits asynchronously until a connection is available if the pool
     /// is exhausted.
-    fn acquire(&self) -> impl Future<Output = Result<PoolGuard<Self::Conn>, QuiverError>> + Send;
+    fn acquire(&self) -> BoxFuture<'_, Result<PoolGuard<Self::Conn>, QuiverError>>;
 
     /// Return the number of idle (available) connections.
     fn idle_count(&self) -> usize;
 
     /// Return the maximum pool size.
     fn max_size(&self) -> usize;
-}
-
-/// Object-safe version of [`Pool`] that returns `Box<dyn DynConnection>`.
-pub trait DynPool: Send + Sync {
-    /// Acquire a connection as a boxed `DynConnection`.
-    fn dyn_acquire(&self) -> BoxFuture<'_, Result<Box<dyn DynConnection>, QuiverError>>;
-
-    /// Return the number of idle connections.
-    fn idle_count(&self) -> usize;
-
-    /// Return the maximum pool size.
-    fn max_size(&self) -> usize;
-}
-
-/// Blanket impl: every `Pool` whose connections implement `Connection + 'static`
-/// is automatically a `DynPool`.
-impl<P> DynPool for P
-where
-    P: Pool,
-    P::Conn: 'static,
-{
-    fn dyn_acquire(&self) -> BoxFuture<'_, Result<Box<dyn DynConnection>, QuiverError>> {
-        Box::pin(async {
-            let guard = self.acquire().await?;
-            Ok(Box::new(guard) as Box<dyn DynConnection>)
-        })
-    }
-
-    fn idle_count(&self) -> usize {
-        Pool::idle_count(self)
-    }
-
-    fn max_size(&self) -> usize {
-        Pool::max_size(self)
-    }
 }
 
 /// A guard that returns its connection to the pool when dropped.
@@ -110,39 +72,33 @@ impl<C: Connection> PoolGuard<C> {
 }
 
 impl<C: Connection + 'static> Connection for PoolGuard<C> {
-    fn execute(&self, stmt: &Statement) -> impl Future<Output = Result<u64, QuiverError>> + Send {
+    fn execute<'a>(&'a self, stmt: &'a Statement) -> BoxFuture<'a, Result<u64, QuiverError>> {
         self.inner().execute(stmt)
     }
 
-    fn query(
-        &self,
-        stmt: &Statement,
-    ) -> impl Future<Output = Result<Vec<Row>, QuiverError>> + Send {
+    fn query<'a>(&'a self, stmt: &'a Statement) -> BoxFuture<'a, Result<Vec<Row>, QuiverError>> {
         self.inner().query(stmt)
     }
 
-    fn query_one(&self, stmt: &Statement) -> impl Future<Output = Result<Row, QuiverError>> + Send {
+    fn query_one<'a>(&'a self, stmt: &'a Statement) -> BoxFuture<'a, Result<Row, QuiverError>> {
         self.inner().query_one(stmt)
     }
 
-    fn query_optional(
-        &self,
-        stmt: &Statement,
-    ) -> impl Future<Output = Result<Option<Row>, QuiverError>> + Send {
+    fn query_optional<'a>(
+        &'a self,
+        stmt: &'a Statement,
+    ) -> BoxFuture<'a, Result<Option<Row>, QuiverError>> {
         self.inner().query_optional(stmt)
     }
 
-    fn execute_ddl(
-        &self,
-        ddl: &DdlStatement,
-    ) -> impl Future<Output = Result<(), QuiverError>> + Send {
+    fn execute_ddl<'a>(&'a self, ddl: &'a DdlStatement) -> BoxFuture<'a, Result<(), QuiverError>> {
         self.inner().execute_ddl(ddl)
     }
 
-    fn query_stream(
-        &self,
-        stmt: &Statement,
-    ) -> impl Future<Output = Result<RowStream, QuiverError>> + Send {
+    fn query_stream<'a>(
+        &'a self,
+        stmt: &'a Statement,
+    ) -> BoxFuture<'a, Result<RowStream, QuiverError>> {
         self.inner().query_stream(stmt)
     }
 }
@@ -153,12 +109,14 @@ impl<C: Transactional + 'static> Transactional for PoolGuard<C> {
     where
         Self: 'a;
 
-    async fn begin(&mut self) -> Result<Self::Transaction<'_>, QuiverError> {
-        self.conn
-            .as_mut()
-            .expect("PoolGuard used after drop")
-            .begin()
-            .await
+    fn begin(&mut self) -> BoxFuture<'_, Result<Self::Transaction<'_>, QuiverError>> {
+        Box::pin(async {
+            self.conn
+                .as_mut()
+                .expect("PoolGuard used after drop")
+                .begin()
+                .await
+        })
     }
 }
 
@@ -169,5 +127,59 @@ impl<C: Connection> Drop for PoolGuard<C> {
             // (receiver dropped), the connection is simply dropped.
             let _ = self.return_tx.try_send(conn);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generic pool backed by a Driver
+// ---------------------------------------------------------------------------
+
+/// A generic connection pool that eagerly creates connections using a [`Driver`].
+///
+/// This eliminates the need for each driver crate to copy-paste pool logic.
+/// Driver-specific pool types (e.g. `SqlitePool`) can wrap this and delegate.
+pub struct DriverPool<D: Driver> {
+    rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<D::Conn>>,
+    tx: tokio::sync::mpsc::Sender<D::Conn>,
+    max_size: usize,
+}
+
+impl<D: Driver> DriverPool<D> {
+    /// Create a new pool, eagerly opening `config.max_connections` connections.
+    pub async fn new(config: PoolConfig, driver: D) -> Result<Self, QuiverError> {
+        let (tx, rx) = tokio::sync::mpsc::channel(config.max_connections);
+
+        for _ in 0..config.max_connections {
+            let conn = driver.connect(&config.url).await?;
+            tx.send(conn)
+                .await
+                .map_err(|_| QuiverError::Driver("failed to initialize pool".into()))?;
+        }
+
+        Ok(Self {
+            rx: tokio::sync::Mutex::new(rx),
+            tx,
+            max_size: config.max_connections,
+        })
+    }
+
+    /// Acquire a connection from the pool.
+    pub async fn acquire(&self) -> Result<PoolGuard<D::Conn>, QuiverError> {
+        let mut rx = self.rx.lock().await;
+        let conn = rx
+            .recv()
+            .await
+            .ok_or_else(|| QuiverError::Driver("pool closed".into()))?;
+        Ok(PoolGuard::new(conn, self.tx.clone()))
+    }
+
+    /// Return the number of idle (available) connections.
+    pub fn idle_count(&self) -> usize {
+        self.tx.capacity() - (self.tx.max_capacity() - self.max_size)
+    }
+
+    /// Return the maximum pool size.
+    pub fn max_size(&self) -> usize {
+        self.max_size
     }
 }

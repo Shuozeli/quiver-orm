@@ -11,7 +11,7 @@
 //! or other tamper-proofing to page tokens.
 
 use base64::prelude::*;
-use quiver_driver_core::{DynConnection, Row, Statement};
+use quiver_driver_core::{Connection, Row, Statement};
 use quiver_error::QuiverError;
 
 /// A paginated list response, compatible with AIP-132.
@@ -128,7 +128,7 @@ impl PageTokenCodec for Base64PageTokenCodec {
 /// adds those automatically. The `count_query` is optional and used only
 /// when `config.include_total_size` is true.
 pub async fn paginate(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     base_query: &Statement,
     count_query: Option<&Statement>,
     request: &PageRequest,
@@ -150,7 +150,7 @@ pub async fn paginate(
 /// This allows plugging in HMAC-signed, encrypted, or otherwise customized
 /// page token encoding for security-sensitive applications.
 pub async fn paginate_with_codec(
-    conn: &dyn DynConnection,
+    conn: &dyn Connection,
     base_query: &Statement,
     count_query: Option<&Statement>,
     request: &PageRequest,
@@ -173,7 +173,7 @@ pub async fn paginate_with_codec(
     let limit = page_size as u64 + 1;
     let paginated_sql = format!("{} LIMIT {} OFFSET {}", base_query.sql, limit, offset);
     let paginated_stmt = Statement::new(paginated_sql, base_query.params.clone());
-    let mut rows = conn.dyn_query(&paginated_stmt).await?;
+    let mut rows = conn.query(&paginated_stmt).await?;
 
     // Determine if there are more results
     let has_next = rows.len() > page_size as usize;
@@ -190,14 +190,14 @@ pub async fn paginate_with_codec(
     // Optionally compute total size
     let total_size = if config.include_total_size {
         if let Some(cq) = count_query {
-            conn.dyn_query(cq).await?.first().and_then(|r| r.get_i64(0))
+            conn.query(cq).await?.first().and_then(|r| r.get_i64(0))
         } else {
             // Auto-generate count query by wrapping the base query
             let count_stmt = Statement::new(
                 format!("SELECT COUNT(*) FROM ({})", base_query.sql),
                 base_query.params.clone(),
             );
-            conn.dyn_query(&count_stmt)
+            conn.query(&count_stmt)
                 .await?
                 .first()
                 .and_then(|r| r.get_i64(0))
