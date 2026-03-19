@@ -2,7 +2,7 @@
 //!
 //! Pre-creates N `SqliteConnection` instances and hands them out via
 //! an mpsc channel. Each connection is returned to the pool when the
-//! [`PoolGuard`] is dropped.
+//! [`quiver_driver_core::PoolGuard`] is dropped.
 
 use quiver_driver_core::pool::DriverPool;
 
