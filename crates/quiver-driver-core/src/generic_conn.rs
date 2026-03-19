@@ -40,9 +40,7 @@ impl<D: Dialect> AdbcConnection<D> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Shared ADBC execution helpers
-// ---------------------------------------------------------------------------
 
 /// Execute a DML/query-update statement via ADBC, returning affected row count.
 async fn adbc_execute_update<C: adbc::Connection>(
@@ -192,10 +190,6 @@ async fn adbc_execute_ddl<C: adbc::Connection>(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Connection impl for AdbcConnection<D>
-// ---------------------------------------------------------------------------
-
 impl<D: Dialect> Connection for AdbcConnection<D> {
     fn execute<'a>(&'a self, stmt: &'a Statement) -> BoxFuture<'a, Result<u64, QuiverError>> {
         Box::pin(async move {
@@ -227,10 +221,6 @@ impl<D: Dialect> Connection for AdbcConnection<D> {
         })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Transactional + Transaction
-// ---------------------------------------------------------------------------
 
 impl<D: Dialect> Transactional for AdbcConnection<D> {
     type Transaction<'a> = AdbcTransaction<D>;

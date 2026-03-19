@@ -5,49 +5,20 @@
 //! [`PoolGuard`] is dropped.
 
 use quiver_driver_core::pool::DriverPool;
-use quiver_driver_core::{BoxFuture, PoolConfig, PoolGuard};
-use quiver_error::QuiverError;
 
-use crate::{SqliteConnection, SqliteDriver};
+use crate::SqliteDriver;
 
 /// A pool of SQLite connections.
-pub struct SqlitePool {
-    inner: DriverPool<SqliteDriver>,
-}
-
-impl SqlitePool {
-    /// Create a new pool, eagerly opening `config.max_connections` connections.
-    pub async fn new(config: PoolConfig) -> Result<Self, QuiverError> {
-        Ok(Self {
-            inner: DriverPool::new(config, SqliteDriver).await?,
-        })
-    }
-}
-
-impl quiver_driver_core::Pool for SqlitePool {
-    type Conn = SqliteConnection;
-
-    fn acquire(&self) -> BoxFuture<'_, Result<PoolGuard<SqliteConnection>, QuiverError>> {
-        Box::pin(async { self.inner.acquire().await })
-    }
-
-    fn idle_count(&self) -> usize {
-        self.inner.idle_count()
-    }
-
-    fn max_size(&self) -> usize {
-        self.inner.max_size()
-    }
-}
+pub type SqlitePool = DriverPool<SqliteDriver>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quiver_driver_core::{Connection, DdlStatement, Pool, Statement, Value};
+    use quiver_driver_core::{Connection, DdlStatement, PoolConfig, Statement, Value};
 
     #[tokio::test]
     async fn pool_basic_acquire_release() {
-        let pool = SqlitePool::new(PoolConfig::new(":memory:", 2))
+        let pool = SqlitePool::new(PoolConfig::new(":memory:", 2), SqliteDriver)
             .await
             .unwrap();
         assert_eq!(pool.max_size(), 2);
@@ -73,7 +44,7 @@ mod tests {
 
     #[tokio::test]
     async fn pool_acquire_release_acquire() {
-        let pool = SqlitePool::new(PoolConfig::new(":memory:", 1))
+        let pool = SqlitePool::new(PoolConfig::new(":memory:", 1), SqliteDriver)
             .await
             .unwrap();
 
@@ -97,7 +68,7 @@ mod tests {
 
     #[tokio::test]
     async fn pool_connections_work_independently() {
-        let pool = SqlitePool::new(PoolConfig::new(":memory:", 3))
+        let pool = SqlitePool::new(PoolConfig::new(":memory:", 3), SqliteDriver)
             .await
             .unwrap();
 

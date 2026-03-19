@@ -31,7 +31,7 @@ pub use helpers::{adbc_err, params_to_batch};
 pub use pool::{Pool, PoolConfig, PoolGuard};
 pub use sanitize::sanitize_connection_error;
 pub use stream::RowStream;
-pub use types::{Column, Row, RowError, Value};
+pub use types::{Row, RowError, Value};
 
 // Re-export adbc so drivers and consumers can use the ADBC interface.
 pub use adbc;

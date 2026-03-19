@@ -126,16 +126,10 @@ impl<T: Into<Value>> From<Option<T>> for Value {
     }
 }
 
-/// A column descriptor in a query result.
-#[derive(Debug, Clone)]
-pub struct Column {
-    pub name: String,
-}
-
 /// A single row from a query result.
 #[derive(Debug, Clone)]
 pub struct Row {
-    pub columns: Vec<Column>,
+    pub column_names: Vec<String>,
     pub values: Vec<Value>,
 }
 
@@ -147,7 +141,7 @@ impl Row {
 
     /// Get a value by column name.
     pub fn get_by_name(&self, name: &str) -> Option<&Value> {
-        let idx = self.columns.iter().position(|c| c.name == name)?;
+        let idx = self.column_names.iter().position(|c| c == name)?;
         self.values.get(idx)
     }
 
@@ -372,12 +366,7 @@ mod tests {
     #[test]
     fn row_access() {
         let row = Row {
-            columns: vec![
-                Column { name: "id".into() },
-                Column {
-                    name: "name".into(),
-                },
-            ],
+            column_names: vec!["id".into(), "name".into()],
             values: vec![Value::Int(1), Value::Text("Alice".into())],
         };
         assert_eq!(row.get_i64(0), Some(1));

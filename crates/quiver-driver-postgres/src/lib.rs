@@ -60,9 +60,7 @@ impl Driver for PostgresDriver {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Placeholder rewriting: Quiver uses `?` but PostgreSQL uses `$1, $2, ...`
-// ---------------------------------------------------------------------------
 
 /// Rewrite `?` placeholders to `$1, $2, ...` for PostgreSQL.
 ///
@@ -115,6 +113,334 @@ fn rewrite_placeholders(sql: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quiver_driver_core::{
+        Connection, DdlStatement, Statement, Transaction, Transactional, Value,
+    };
+
+    fn pg_url() -> String {
+        std::env::var("QUIVER_PG_URL")
+            .unwrap_or_else(|_| "postgresql://localhost:5432/quiver_test".to_string())
+    }
+
+    async fn pg_conn() -> PostgresConnection {
+        PostgresDriver.connect(&pg_url()).await.unwrap()
+    }
+
+    fn ddl(sql: &str) -> DdlStatement {
+        DdlStatement::new(sql.to_string())
+    }
+
+    fn stmt(sql: &str, params: &[Value]) -> Statement {
+        Statement::new(sql.to_string(), params.to_vec())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn connect_and_execute_ddl() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_ddl"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_ddl (id SERIAL PRIMARY KEY, name TEXT NOT NULL)",
+        ))
+        .await
+        .unwrap();
+        conn.execute_ddl(&ddl("DROP TABLE test_ddl")).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn insert_and_query() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_iq"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_iq (id SERIAL PRIMARY KEY, name TEXT)",
+        ))
+        .await
+        .unwrap();
+
+        let affected = conn
+            .execute(&stmt(
+                "INSERT INTO test_iq (name) VALUES (?)",
+                &[Value::from("Alice")],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+
+        let rows = conn
+            .query(&stmt("SELECT id, name FROM test_iq", &[]))
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].get_string(1), Some("Alice".into()));
+
+        conn.execute_ddl(&ddl("DROP TABLE test_iq")).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn query_one_and_optional() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_qoo"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl("CREATE TABLE test_qoo (id INTEGER PRIMARY KEY)"))
+            .await
+            .unwrap();
+        conn.execute(&stmt("INSERT INTO test_qoo (id) VALUES (1)", &[]))
+            .await
+            .unwrap();
+
+        let row = conn
+            .query_one(&stmt("SELECT id FROM test_qoo WHERE id = 1", &[]))
+            .await
+            .unwrap();
+        assert_eq!(row.get_i64(0), Some(1));
+
+        let none = conn
+            .query_optional(&stmt("SELECT id FROM test_qoo WHERE id = 99", &[]))
+            .await
+            .unwrap();
+        assert!(none.is_none());
+
+        conn.execute_ddl(&ddl("DROP TABLE test_qoo")).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn transaction_commit() {
+        let mut conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_txc"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_txc (id SERIAL PRIMARY KEY, v TEXT)",
+        ))
+        .await
+        .unwrap();
+
+        {
+            let tx = conn.begin().await.unwrap();
+            tx.execute(&stmt(
+                "INSERT INTO test_txc (v) VALUES (?)",
+                &[Value::from("a")],
+            ))
+            .await
+            .unwrap();
+            tx.execute(&stmt(
+                "INSERT INTO test_txc (v) VALUES (?)",
+                &[Value::from("b")],
+            ))
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+
+        let rows = conn
+            .query(&stmt("SELECT COUNT(*) FROM test_txc", &[]))
+            .await
+            .unwrap();
+        assert_eq!(rows[0].get_i64(0), Some(2));
+
+        conn.execute_ddl(&ddl("DROP TABLE test_txc")).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn transaction_explicit_rollback() {
+        let mut conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_txr"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_txr (id SERIAL PRIMARY KEY, v TEXT)",
+        ))
+        .await
+        .unwrap();
+        conn.execute(&stmt("INSERT INTO test_txr (v) VALUES ('keep')", &[]))
+            .await
+            .unwrap();
+
+        {
+            let tx = conn.begin().await.unwrap();
+            tx.execute(&stmt(
+                "INSERT INTO test_txr (v) VALUES (?)",
+                &[Value::from("discard")],
+            ))
+            .await
+            .unwrap();
+            tx.rollback().await.unwrap();
+        }
+
+        let rows = conn
+            .query(&stmt("SELECT COUNT(*) FROM test_txr", &[]))
+            .await
+            .unwrap();
+        assert_eq!(rows[0].get_i64(0), Some(1));
+
+        conn.execute_ddl(&ddl("DROP TABLE test_txr")).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn null_result() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_null"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_null (id SERIAL PRIMARY KEY, v TEXT)",
+        ))
+        .await
+        .unwrap();
+        // Insert NULL via raw SQL (PG ADBC does not bind null params)
+        conn.execute(&stmt("INSERT INTO test_null (v) VALUES (NULL)", &[]))
+            .await
+            .unwrap();
+
+        let row = conn
+            .query_one(&stmt("SELECT v FROM test_null LIMIT 1", &[]))
+            .await
+            .unwrap();
+        assert!(row.get(0).unwrap().is_null());
+
+        conn.execute_ddl(&ddl("DROP TABLE test_null"))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn float_roundtrip() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_float"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl("CREATE TABLE test_float (v DOUBLE PRECISION)"))
+            .await
+            .unwrap();
+        conn.execute(&stmt(
+            "INSERT INTO test_float (v) VALUES (?)",
+            &[Value::from(1.234f64)],
+        ))
+        .await
+        .unwrap();
+
+        let row = conn
+            .query_one(&stmt("SELECT v FROM test_float", &[]))
+            .await
+            .unwrap();
+        let v = row.get_f64(0).unwrap();
+        assert!((v - 1.234).abs() < f64::EPSILON);
+
+        conn.execute_ddl(&ddl("DROP TABLE test_float"))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn bool_roundtrip() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_bool"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl("CREATE TABLE test_bool (v BOOLEAN)"))
+            .await
+            .unwrap();
+        conn.execute(&stmt(
+            "INSERT INTO test_bool (v) VALUES (?)",
+            &[Value::from(true)],
+        ))
+        .await
+        .unwrap();
+
+        let row = conn
+            .query_one(&stmt("SELECT v FROM test_bool", &[]))
+            .await
+            .unwrap();
+        assert_eq!(row.get_bool(0), Some(true));
+
+        conn.execute_ddl(&ddl("DROP TABLE test_bool"))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn get_by_column_name() {
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_colname"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_colname (id SERIAL PRIMARY KEY, name TEXT)",
+        ))
+        .await
+        .unwrap();
+        conn.execute(&stmt(
+            "INSERT INTO test_colname (name) VALUES (?)",
+            &[Value::from("Bob")],
+        ))
+        .await
+        .unwrap();
+
+        let row = conn
+            .query_one(&stmt("SELECT id, name FROM test_colname", &[]))
+            .await
+            .unwrap();
+        assert_eq!(row.get_by_name("name"), Some(&Value::Text("Bob".into())));
+
+        conn.execute_ddl(&ddl("DROP TABLE test_colname"))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn query_stream_basic() {
+        use tokio_stream::StreamExt;
+
+        let conn = pg_conn().await;
+        conn.execute_ddl(&ddl("DROP TABLE IF EXISTS test_stream"))
+            .await
+            .unwrap();
+        conn.execute_ddl(&ddl(
+            "CREATE TABLE test_stream (id BIGINT PRIMARY KEY, name TEXT)",
+        ))
+        .await
+        .unwrap();
+
+        for i in 1..=10i64 {
+            conn.execute(&stmt(
+                "INSERT INTO test_stream (id, name) VALUES (?, ?)",
+                &[Value::Int(i), Value::from(format!("user{i}"))],
+            ))
+            .await
+            .unwrap();
+        }
+
+        let mut stream = conn
+            .query_stream(&stmt("SELECT id, name FROM test_stream ORDER BY id", &[]))
+            .await
+            .unwrap();
+
+        let mut count = 0i64;
+        while let Some(row) = stream.next().await {
+            let row = row.unwrap();
+            count += 1;
+            assert_eq!(row.get_i64(0), Some(count));
+        }
+        assert_eq!(count, 10);
+
+        conn.execute_ddl(&ddl("DROP TABLE test_stream"))
+            .await
+            .unwrap();
+    }
 
     #[test]
     fn rewrite_simple_placeholders() {

@@ -1,3 +1,4 @@
+use crate::helpers::{has_default, is_auto_field};
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
@@ -36,10 +37,6 @@ impl TypeScriptGenerator {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Enum generation
-// ---------------------------------------------------------------------------
-
 fn gen_enum(out: &mut String, e: &EnumDef) {
     out.push_str(&format!("export enum {} {{\n", e.name));
     for v in &e.values {
@@ -47,10 +44,6 @@ fn gen_enum(out: &mut String, e: &EnumDef) {
     }
     out.push_str("}\n\n");
 }
-
-// ---------------------------------------------------------------------------
-// Model interface (column fields only)
-// ---------------------------------------------------------------------------
 
 fn gen_model_interface(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {} {{\n", m.name));
@@ -64,10 +57,6 @@ fn gen_model_interface(out: &mut String, m: &ModelDef, schema: &Schema) {
     }
     out.push_str("}\n\n");
 }
-
-// ---------------------------------------------------------------------------
-// CreateInput (exclude @id @autoincrement, optional for nullable/default)
-// ---------------------------------------------------------------------------
 
 fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {}CreateInput {{\n", m.name));
@@ -85,10 +74,6 @@ fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("}\n\n");
 }
 
-// ---------------------------------------------------------------------------
-// UpdateInput (all non-auto fields optional)
-// ---------------------------------------------------------------------------
-
 fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {}UpdateInput {{\n", m.name));
     for f in &m.fields {
@@ -104,10 +89,6 @@ fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     }
     out.push_str("}\n\n");
 }
-
-// ---------------------------------------------------------------------------
-// WhereUniqueInput (@id and @unique fields only)
-// ---------------------------------------------------------------------------
 
 fn gen_where_unique_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str(&format!("export interface {}WhereUniqueInput {{\n", m.name));
@@ -125,10 +106,6 @@ fn gen_where_unique_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("}\n\n");
 }
 
-// ---------------------------------------------------------------------------
-// Field constants
-// ---------------------------------------------------------------------------
-
 fn gen_field_constants(out: &mut String, m: &ModelDef, _schema: &Schema) {
     out.push_str(&format!("export const {}Fields = {{\n", m.name));
     for f in &m.fields {
@@ -136,10 +113,6 @@ fn gen_field_constants(out: &mut String, m: &ModelDef, _schema: &Schema) {
     }
     out.push_str("} as const;\n\n");
 }
-
-// ---------------------------------------------------------------------------
-// Type mapping: BaseType -> TypeScript
-// ---------------------------------------------------------------------------
 
 #[allow(clippy::only_used_in_recursion)] // schema needed for nested type resolution
 fn base_type_to_ts(type_expr: &TypeExpr, schema: &Schema) -> String {
@@ -211,22 +184,6 @@ fn base_type_to_ts(type_expr: &TypeExpr, schema: &Schema) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Attribute helpers
-// ---------------------------------------------------------------------------
-
-fn is_auto_field(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
-}
-
-fn has_default(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Default(_)))
-}
-
 fn is_id_field(f: &FieldDef) -> bool {
     f.attributes.iter().any(|a| matches!(a, FieldAttribute::Id))
 }
@@ -236,10 +193,6 @@ fn is_unique_field(f: &FieldDef) -> bool {
         .iter()
         .any(|a| matches!(a, FieldAttribute::Unique))
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

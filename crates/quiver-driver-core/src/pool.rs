@@ -130,10 +130,6 @@ impl<C: Connection> Drop for PoolGuard<C> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Generic pool backed by a Driver
-// ---------------------------------------------------------------------------
-
 /// A generic connection pool that eagerly creates connections using a [`Driver`].
 ///
 /// This eliminates the need for each driver crate to copy-paste pool logic.
@@ -181,5 +177,21 @@ impl<D: Driver> DriverPool<D> {
     /// Return the maximum pool size.
     pub fn max_size(&self) -> usize {
         self.max_size
+    }
+}
+
+impl<D: Driver + 'static> Pool for DriverPool<D> {
+    type Conn = D::Conn;
+
+    fn acquire(&self) -> BoxFuture<'_, Result<PoolGuard<D::Conn>, QuiverError>> {
+        Box::pin(async { self.acquire().await })
+    }
+
+    fn idle_count(&self) -> usize {
+        self.idle_count()
+    }
+
+    fn max_size(&self) -> usize {
+        self.max_size()
     }
 }

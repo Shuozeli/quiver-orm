@@ -58,7 +58,11 @@ impl<C: Transactional> QuiverClient<C> {
                 Ok(result)
             }
             Err(e) => {
-                let _ = tx.rollback().await;
+                if let Err(rb_err) = tx.rollback().await {
+                    return Err(QuiverError::Driver(format!(
+                        "rollback failed: {rb_err} (original error: {e})"
+                    )));
+                }
                 Err(e)
             }
         }
@@ -90,7 +94,11 @@ impl<C: Transactional> QuiverClient<C> {
                     return Ok(result);
                 }
                 Err(e) => {
-                    let _ = tx.rollback().await;
+                    if let Err(rb_err) = tx.rollback().await {
+                        return Err(QuiverError::Driver(format!(
+                            "rollback failed: {rb_err} (original error: {e})"
+                        )));
+                    }
                     attempts += 1;
                     if attempts > policy.max_retries || !e.is_retryable() {
                         return Err(e);

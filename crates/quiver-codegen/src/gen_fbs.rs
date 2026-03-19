@@ -1,3 +1,4 @@
+use crate::helpers::{has_default, is_auto_field};
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
@@ -164,18 +165,6 @@ fn is_required_fbs_type(base: &BaseType) -> bool {
             | BaseType::Map { .. }
             | BaseType::Struct(_)
     )
-}
-
-fn is_auto_field(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Autoincrement | FieldAttribute::Id))
-}
-
-fn has_default(f: &FieldDef) -> bool {
-    f.attributes
-        .iter()
-        .any(|a| matches!(a, FieldAttribute::Default(_)))
 }
 
 fn field_default_fbs(f: &FieldDef) -> String {

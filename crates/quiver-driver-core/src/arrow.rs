@@ -9,7 +9,7 @@ use arrow_schema::{DataType, Field, Schema};
 use quiver_error::QuiverError;
 use std::sync::Arc;
 
-use crate::{Column, Row, Value};
+use crate::{Row, Value};
 
 /// Convert a `RecordBatch` into a `Vec<Row>`.
 ///
@@ -19,13 +19,7 @@ pub fn record_batch_to_rows(batch: &RecordBatch) -> Result<Vec<Row>, QuiverError
     let num_cols = batch.num_columns();
     let schema = batch.schema();
 
-    let columns: Vec<Column> = schema
-        .fields()
-        .iter()
-        .map(|f| Column {
-            name: f.name().clone(),
-        })
-        .collect();
+    let column_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
     let mut rows = Vec::with_capacity(num_rows);
     for row_idx in 0..num_rows {
@@ -35,7 +29,7 @@ pub fn record_batch_to_rows(batch: &RecordBatch) -> Result<Vec<Row>, QuiverError
             values.push(arrow_array_value(array, row_idx)?);
         }
         rows.push(Row {
-            columns: columns.clone(),
+            column_names: column_names.clone(),
             values,
         });
     }
@@ -53,18 +47,18 @@ pub fn rows_to_record_batch(rows: &[Row]) -> Result<RecordBatch, arrow_schema::A
     }
 
     let first = &rows[0];
-    let num_cols = first.columns.len();
+    let num_cols = first.column_names.len();
     let num_rows = rows.len();
 
     // Infer schema from column names and first-row value types.
     let fields: Vec<Field> = first
-        .columns
+        .column_names
         .iter()
         .zip(first.values.iter())
-        .map(|(col, val)| {
+        .map(|(name, val)| {
             let dt = value_to_arrow_type(val);
             let nullable = matches!(val, Value::Null);
-            Field::new(&col.name, dt, nullable)
+            Field::new(name, dt, nullable)
         })
         .collect();
     let schema = Arc::new(Schema::new(fields));
@@ -276,17 +270,10 @@ mod tests {
 
     #[test]
     fn roundtrip_rows_to_batch_and_back() {
+        let cols = vec!["id".to_string(), "name".to_string(), "score".to_string()];
         let rows = vec![
             Row {
-                columns: vec![
-                    Column { name: "id".into() },
-                    Column {
-                        name: "name".into(),
-                    },
-                    Column {
-                        name: "score".into(),
-                    },
-                ],
+                column_names: cols.clone(),
                 values: vec![
                     Value::Int(1),
                     Value::Text("Alice".into()),
@@ -294,15 +281,7 @@ mod tests {
                 ],
             },
             Row {
-                columns: vec![
-                    Column { name: "id".into() },
-                    Column {
-                        name: "name".into(),
-                    },
-                    Column {
-                        name: "score".into(),
-                    },
-                ],
+                column_names: cols,
                 values: vec![Value::Int(2), Value::Text("Bob".into()), Value::Float(8.0)],
             },
         ];
@@ -346,12 +325,7 @@ mod tests {
     #[test]
     fn record_batch_with_nulls() {
         let rows = vec![Row {
-            columns: vec![
-                Column { name: "id".into() },
-                Column {
-                    name: "name".into(),
-                },
-            ],
+            column_names: vec!["id".into(), "name".into()],
             values: vec![Value::Int(1), Value::Text("Alice".into())],
         }];
 
@@ -364,9 +338,7 @@ mod tests {
     #[test]
     fn blob_column_roundtrip() {
         let rows = vec![Row {
-            columns: vec![Column {
-                name: "data".into(),
-            }],
+            column_names: vec!["data".into()],
             values: vec![Value::Blob(vec![0xDE, 0xAD])],
         }];
         let batch = rows_to_record_batch(&rows).unwrap();

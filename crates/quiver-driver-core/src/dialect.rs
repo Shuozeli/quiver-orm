@@ -19,17 +19,14 @@ pub trait Dialect: Send + Sync + Clone + 'static {
     /// Rewrite SQL from Quiver's canonical `?N` placeholder style to the
     /// dialect's native format.
     ///
-    /// The default implementation returns the SQL unchanged, which is correct
-    /// for SQLite and MySQL (both use `?`).
-    fn rewrite_sql(&self, sql: &str) -> String {
-        sql.to_owned()
-    }
+    /// Return the SQL unchanged for dialects that use `?` (SQLite, MySQL).
+    /// PostgreSQL must rewrite to `$1, $2, ...`.
+    fn rewrite_sql(&self, sql: &str) -> String;
 
     /// Whether DDL statements should be split on `;` and executed individually.
     ///
     /// PostgreSQL and MySQL ADBC drivers do not support multi-statement
-    /// execution. SQLite handles it natively.
-    fn split_ddl(&self) -> bool {
-        false
-    }
+    /// execution, so they must return `true`. SQLite handles multi-statement
+    /// DDL natively and should return `false`.
+    fn split_ddl(&self) -> bool;
 }

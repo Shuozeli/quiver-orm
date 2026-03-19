@@ -22,7 +22,14 @@ pub struct SqliteDialect;
 
 impl Dialect for SqliteDialect {
     type AdbcConn = adbc_sqlite::SqliteConnection;
-    // Default rewrite_sql (no-op) and split_ddl (false) are correct for SQLite.
+
+    fn rewrite_sql(&self, sql: &str) -> String {
+        sql.to_owned()
+    }
+
+    fn split_ddl(&self) -> bool {
+        false
+    }
 }
 
 /// A SQLite connection.

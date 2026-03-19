@@ -564,7 +564,7 @@ async fn cmd_db_execute(schema_path: &Path, sql: &str) -> Result<(), QuiverError
         }
 
         // Print column headers
-        let headers: Vec<&str> = rows[0].columns.iter().map(|c| c.name.as_str()).collect();
+        let headers: Vec<&str> = rows[0].column_names.iter().map(|s| s.as_str()).collect();
         println!("{}", headers.join(" | "));
         println!(
             "{}",

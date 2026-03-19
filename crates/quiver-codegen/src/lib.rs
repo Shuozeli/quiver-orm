@@ -1,3 +1,5 @@
+pub mod helpers;
+
 pub mod gen_fbs;
 pub mod gen_proto;
 pub mod gen_rust_client;
