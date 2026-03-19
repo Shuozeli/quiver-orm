@@ -394,16 +394,11 @@ deserializable structs from your `.quiver` schema.
 `Row::get_by_name(name)` exists and returns `Option<&Value>` by column name.
 Named access has been available since v2.
 
-### 5. No cursor-based pagination
+### RESOLVED: No cursor-based pagination
 
-prisma-rs has `.cursor()` + `.skip(1)`. Quiver requires manual filter-based pagination:
-
-```rust
-// Must use filter instead of cursor
-if let Ok(cursor_id) = page_token.parse::<i64>() {
-    builder = builder.filter(Filter::gt("id", Value::Int(cursor_id)));
-}
-```
+Cursor-based pagination is now available via `quiver_query::paginate()` with
+`PageRequest`, `PageResponse`, and `PaginateConfig`. Uses Base64-encoded page
+tokens (AIP-132 compatible). See `docs/usage.md` for examples.
 
 ## Side-by-Side: Migrating component_service.rs
 

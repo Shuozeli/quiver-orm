@@ -1,95 +1,42 @@
 # Quiver ORM -- Code Quality Audit
 
-Audit date: 2026-03-17
+Audit date: 2026-03-17. Status updated: 2026-03-19.
 
 ## Critical: Driver Crate Copy-Paste Duplication
 
-The three driver crates are 90%+ identical code with only type names changed.
-This is the single biggest quality issue -- any bug fix requires coordinated
-changes in 3 places.
+### Duplicated Connection Trait Impls (~500 LOC) -- RESOLVED
 
-### Duplicated Connection Trait Impls (~500 LOC)
+**Status:** Fixed. All Connection/Transaction impls are now in a single generic
+`AdbcConnection<D: Dialect>` and `AdbcTransaction<D>` in
+`crates/quiver-driver-core/src/generic_conn.rs`. Driver crates define only a
+`Dialect` impl and export type aliases (e.g., `type SqliteConnection = AdbcConnection<SqliteDialect>`).
 
-`execute()`, `query()`, `query_stream()`, `execute_ddl()` are near-identical:
+### Duplicated Pool Implementations (3 files) -- RESOLVED
 
-- `crates/quiver-driver-sqlite/src/lib.rs:77-188` (SqliteConnection)
-- `crates/quiver-driver-sqlite/src/lib.rs:218-328` (SqliteTransaction)
-- `crates/quiver-driver-postgres/src/lib.rs:118-237` (PostgresConnection)
-- `crates/quiver-driver-postgres/src/lib.rs:268-387` (PostgresTransaction)
-- `crates/quiver-driver-mysql/src/lib.rs:66-182` (MysqlConnection)
-- `crates/quiver-driver-mysql/src/lib.rs:213-329` (MysqlTransaction)
+**Status:** Fixed. `DriverPool<D: Driver>` in `crates/quiver-driver-core/src/pool.rs`
+provides a generic pool. Driver pool types are type aliases
+(e.g., `type SqlitePool = DriverPool<SqliteDriver>`).
 
-Only differences: PG rewrites `?` -> `$1,$2` placeholders, PG/MySQL split
-multi-statement DDL on `;`.
+### Duplicated Transaction Drop (thread spawn anti-pattern) -- OPEN
 
-**Fix:** Extract a generic `GenericConnection<D: Dialect>` in `quiver-driver-core`
-with a `Dialect` trait for driver-specific behavior:
-
-```rust
-trait Dialect {
-    fn rewrite_sql(sql: &str, param_count: usize) -> String { sql.to_string() }
-    fn requires_ddl_splitting() -> bool { false }
-}
-```
-
-### Duplicated Pool Implementations (3 files, textually identical)
-
-- `crates/quiver-driver-sqlite/src/pool.rs`
-- `crates/quiver-driver-postgres/src/pool.rs`
-- `crates/quiver-driver-mysql/src/pool.rs`
-
-Same `new()`, `acquire()`, `idle_count()`, `max_size()` logic.
-
-**Fix:** Generic `Pool<C: Connection>` in `quiver-driver-core/src/pool.rs`.
-
-### Duplicated Transaction Drop (thread spawn anti-pattern)
-
-All 3 drivers spawn a new OS thread + Tokio runtime inside `Drop` to rollback:
-
-- `crates/quiver-driver-sqlite/src/lib.rs:354-378`
-- `crates/quiver-driver-postgres/src/lib.rs:413-437`
-- `crates/quiver-driver-mysql/src/lib.rs:355-378`
-
-```rust
-impl Drop for SqliteTransaction {
-    fn drop(&mut self) {
-        if !self.finished {
-            let handle = std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread().build()...;
-                rt.block_on(async { /* rollback */ });
-            });
-            let _ = handle.join(); // blocks dropping thread
-        }
-    }
-}
-```
-
-This can deadlock during shutdown and is expensive.
+The generic `AdbcTransaction<D>` in `crates/quiver-driver-core/src/generic_conn.rs`
+still spawns a new OS thread + Tokio runtime inside `Drop` to rollback.
+This is now in a single location rather than duplicated across 3 drivers.
 
 **Fix:** Require explicit `.rollback()` (aligns with biased ORM philosophy) or
-use a background task queue. Either way, extract to shared code.
+use a background task queue.
 
-### Duplicated `adbc_err()` Helper
+### Duplicated `adbc_err()` Helper -- RESOLVED
 
-Identical one-liner in all 3 drivers:
-
-- `crates/quiver-driver-sqlite/src/lib.rs:391`
-- `crates/quiver-driver-postgres/src/lib.rs:450`
-- `crates/quiver-driver-mysql/src/lib.rs:392`
-
-**Fix:** Move to `quiver-driver-core`.
+**Status:** Fixed. Centralized in `crates/quiver-driver-core/src/helpers.rs`.
+Includes credential sanitization via `sanitize_connection_error()`.
 
 ---
 
-## High: Inconsistent Internal Types
+## High: Inconsistent Internal Types -- RESOLVED
 
-Three separate `BoxFuture` type aliases in the same crate (`quiver-driver-core`):
-
-- `src/async_api.rs` -- `type BoxFuture<'a, T>`
-- `src/async_client.rs` -- `pub type BoxFut<'a, T>` (different name)
-- `src/pool.rs` -- `type BoxFuture<'a, T>`
-
-**Fix:** Single canonical definition in `lib.rs`, re-export everywhere.
+**Status:** Fixed. Single `BoxFuture` definition in `src/async_api.rs`, re-exported
+from `lib.rs`. All modules use the same type.
 
 ---
 
@@ -118,13 +65,12 @@ only be reachable through the fluent `Query::table()...` API.
 
 ---
 
-## Medium: No Dialect Abstraction
+## Medium: No Dialect Abstraction -- RESOLVED
 
-PG placeholder rewriting (`crates/quiver-driver-postgres/src/lib.rs:72-112`)
-and MySQL DDL splitting (`crates/quiver-driver-mysql/src/lib.rs:116-133`) are
-ad-hoc. No shared trait or enum for dialect-specific behavior.
-
-**Fix:** `Dialect` trait in `driver-core` (see Connection duplication fix above).
+**Status:** Fixed. `Dialect` trait in `crates/quiver-driver-core/src/dialect.rs`
+with `rewrite_sql()` and `split_ddl()` methods. No default implementations --
+new dialects get a compile error if they forget to implement these methods.
+Implementations: `SqliteDialect`, `PostgresDialect`, `MysqlDialect`.
 
 ---
 
@@ -196,15 +142,15 @@ Should be split into submodules (Connection, Transaction, helpers).
 
 ## Improvement Priority
 
-| Priority | Item | Impact |
+| Priority | Item | Status |
 |----------|------|--------|
-| P0 | Extract shared driver code (Connection, Pool, Transaction) | -1500 LOC, eliminates triple-maintenance |
-| P0 | Remove thread spawn from Drop | Eliminates deadlock risk |
-| P1 | Add Dialect trait | Clean extension point for new drivers |
-| P1 | Remove ADBC public re-exports | Clean public API |
-| P1 | Unify BoxFuture definitions | Code consistency |
-| P2 | Add feature flags for drivers | Smaller binaries |
-| P2 | Improve test quality (parameterize, add assertions) | Better coverage signal |
-| P2 | Complete FBS struct codegen | Feature completeness |
-| P3 | Split long files into submodules | Readability |
-| P3 | Hide internal builder types | API surface reduction |
+| ~~P0~~ | ~~Extract shared driver code (Connection, Pool, Transaction)~~ | DONE -- AdbcConnection<D>, DriverPool<D> |
+| P0 | Remove thread spawn from Drop | OPEN -- now in single location |
+| ~~P1~~ | ~~Add Dialect trait~~ | DONE -- Dialect in driver-core |
+| P1 | Remove ADBC public re-exports | OPEN |
+| ~~P1~~ | ~~Unify BoxFuture definitions~~ | DONE -- single definition |
+| P2 | Add feature flags for drivers | OPEN |
+| P2 | Improve test quality (parameterize, add assertions) | OPEN |
+| P2 | Complete FBS struct codegen | OPEN |
+| P3 | Split long files into submodules | OPEN |
+| P3 | Hide internal builder types | OPEN |

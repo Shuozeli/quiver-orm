@@ -51,37 +51,32 @@ enum Role {
 ```
 model User {
     // field    Type                          Attributes
-    id         Int32                         @id @autoincrement
-    email      Utf8                          @unique
+    id         Int32                         PRIMARY KEY AUTOINCREMENT
+    email      Utf8                          UNIQUE
     name       Utf8?                                              // nullable
     age        Int16?
-    balance    Decimal128(10, 2)             @default(0)
-    score      Float64                       @default(0.0)
+    balance    Decimal128(10, 2)             DEFAULT 0
+    score      Float64                       DEFAULT 0.0
     avatar     Binary?
-    active     Boolean                       @default(true)
-    created    Timestamp(Microsecond, UTC)   @default(now())
-    tags       List<Utf8>                    @default([])
+    active     Boolean                       DEFAULT true
+    created    Timestamp(Microsecond, UTC)   DEFAULT now()
+    tags       List<Utf8>                    DEFAULT []
     metadata   Map<Utf8, Utf8>?
-    role       Role                          @default(User)
+    role       Role                          DEFAULT User
 
-    // Relations
-    posts      Post[]                        @relation
-    profile    Profile?                      @relation
-
-    // Model-level attributes
-    @@index([email])
-    @@map("users")
+    INDEX (email)
+    MAP "users"
 }
 
 model Post {
-    id         Int32    @id @autoincrement
+    id         Int32    PRIMARY KEY AUTOINCREMENT
     title      Utf8
     content    LargeUtf8?
-    published  Boolean  @default(false)
+    published  Boolean  DEFAULT false
     authorId   Int32
-    author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-    @@index([authorId])
+    FOREIGN KEY (authorId) REFERENCES User (id) ON DELETE CASCADE
+    INDEX (authorId)
 }
 ```
 
@@ -107,13 +102,13 @@ model Post {
 
 ### Referential Actions
 
-Foreign key relations support `onDelete` and `onUpdate`:
+Foreign key relations support `ON DELETE` and `ON UPDATE`:
 
 ```
-author User @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+FOREIGN KEY (authorId) REFERENCES User (id) ON DELETE CASCADE ON UPDATE RESTRICT
 ```
 
-Actions: `Cascade`, `Restrict`, `SetNull`, `SetDefault`, `NoAction`
+Actions: `CASCADE`, `RESTRICT`, `SET NULL`, `SET DEFAULT`, `NO ACTION`
 
 ---
 
@@ -497,6 +492,30 @@ let query = Query::table("active_users")
     .build();
 ```
 
+### Streaming Queries
+
+For large result sets, use streaming to avoid buffering all rows in memory:
+
+```rust
+use quiver_query::find_many_stream;
+use tokio_stream::StreamExt;
+
+let mut stream = client.transaction(|tx| Box::pin(async move {
+    let query = user::find_many()
+        .order_by(user::order::id_asc())
+        .build();
+    tx.query_stream(&query).await
+})).await?;
+
+while let Some(row) = stream.next().await {
+    let row = row?;
+    // Process row without buffering entire result set
+}
+```
+
+The `Connection::query_stream` method returns a `RowStream` which implements
+`Stream<Item = Result<Row, QuiverError>>`.
+
 ### Raw Queries
 
 For queries that cannot be expressed with the builder:
@@ -561,6 +580,12 @@ let mut client = QuiverClient::new(
     MysqlDriver.connect("mysql://user:pass@localhost:3306/mydb").await?
 );
 ```
+
+### Credential Safety
+
+Driver error messages are automatically sanitized to redact credentials.
+Connection URLs containing `://user:password@host` patterns are redacted
+to `://***:***@host` before reaching error handlers or logs.
 
 ### Transactions
 

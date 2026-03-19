@@ -1,5 +1,11 @@
 # Quiver-ORM: Consumer Integration Issues
 
+> **Resolution (2026-03-19):** The `Connection`, `Transactional`, `Transaction`,
+> `Driver`, and `Pool` traits in `quiver-driver-core` have been switched from
+> RPITIT (`impl Future`) to `BoxFuture` returns. This resolves Problems 1-3
+> described below. Problem 4 is also resolved because `PoolGuard<C>` delegates
+> to `Connection` methods which now use `BoxFuture`.
+
 ## Context
 
 We're migrating a real gRPC server (MyCRM, ~20 service files, SQLite backend) from diesel to quiver-orm. The mechanical migration is complete -- all service files are rewritten -- but `cargo check` reveals ~148 compile errors caused by **RPITIT (return-position impl Trait in traits)** limitations in `quiver-driver-core`.

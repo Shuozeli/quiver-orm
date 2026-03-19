@@ -41,29 +41,28 @@ enum Role {
 }
 
 model User {
-    id       Int32                         @id @autoincrement
-    email    Utf8                          @unique
+    id       Int32                         PRIMARY KEY AUTOINCREMENT
+    email    Utf8                          UNIQUE
     name     Utf8?
-    balance  Decimal128(10, 2)             @default(0)
-    active   Boolean                       @default(true)
-    created  Timestamp(Microsecond, UTC)   @default(now())
-    role     Role                          @default(User)
+    balance  Decimal128(10, 2)             DEFAULT 0
+    active   Boolean                       DEFAULT true
+    created  Timestamp(Microsecond, UTC)   DEFAULT now()
+    role     Role                          DEFAULT User
 
-    posts    Post[]                        @relation
-
-    @@index([email])
-    @@map("users")
+    FOREIGN KEY (role) REFERENCES Role (name)
+    INDEX (email)
+    MAP "users"
 }
 
 model Post {
-    id        Int32    @id @autoincrement
+    id        Int32    PRIMARY KEY AUTOINCREMENT
     title     Utf8
     content   LargeUtf8?
-    published Boolean  @default(false)
+    published Boolean  DEFAULT false
     authorId  Int32
-    author    User     @relation(fields: [authorId], references: [id])
 
-    @@index([authorId])
+    FOREIGN KEY (authorId) REFERENCES User (id)
+    INDEX (authorId)
 }
 ```
 
@@ -150,17 +149,18 @@ client.transaction(|tx| Box::pin(async move {
 
 ```
 quiver/
-  quiver-schema/           Schema parser, AST, validation, Arrow type mapping
-  quiver-codegen/          Code generation (FBS, Proto, Rust, TS, SQL DDL)
-  quiver-query/            Type-safe query builder (SQL injection prevention)
-  quiver-driver-core/      Driver/Connection/Transaction traits, QuiverClient, Value/Row types
-  quiver-driver-sqlite/    SQLite driver (delegates to adbc-sqlite)
-  quiver-driver-postgres/  PostgreSQL driver (delegates to adbc-postgres)
-  quiver-driver-mysql/     MySQL driver (delegates to adbc-mysql)
+  quiver-schema/           Schema parser, lexer, AST, validation, Arrow type mapping
+  quiver-codegen/          Code generation (FBS, Proto, Rust client, Rust serde, TS, SQL DDL)
+  quiver-query/            Type-safe query builder, pagination, relations, streaming
+  quiver-driver-core/      Dialect trait, generic AdbcConnection<D>, DriverPool<D>,
+                           QuiverClient, Value/Row/RowStream, BoxFuture-based traits
+  quiver-driver-sqlite/    SQLite driver (type alias to AdbcConnection<SqliteDialect>)
+  quiver-driver-postgres/  PostgreSQL driver (type alias to AdbcConnection<PostgresDialect>)
+  quiver-driver-mysql/     MySQL driver (type alias to AdbcConnection<MysqlDialect>)
   quiver-migrate/          Schema diffing, DDL generation, migration tracking, introspection
-  quiver-e2e/              End-to-end integration tests
-  quiver-cli/              CLI binary
-  quiver-error/            Shared error types
+  quiver-e2e/              End-to-end integration tests (SQLite)
+  quiver-cli/              CLI binary (parse, generate, migrate, db)
+  quiver-error/            Shared QuiverError enum with retry detection
   arrow-adbc-rs/           Git submodule: clean-room ADBC core + drivers
 ```
 
@@ -183,20 +183,18 @@ Every Quiver type maps 1:1 to an `arrow_schema::DataType`:
 
 ## Schema Attributes
 
+Field-level attributes are placed after the type on the same line.
+Model-level attributes are placed on their own lines within the model block.
+
 | Attribute | Level | Meaning |
 |-----------|-------|---------|
-| @id | field | Primary key |
-| @autoincrement | field | Auto-increment |
-| @unique | field | Unique constraint |
-| @default(value) | field | Default value (literal, now(), uuid(), cuid()) |
-| @updatedAt | field | Auto-set on update |
-| @map("name") | field | Database column name |
-| @relation(...) | field | Foreign key with optional onDelete/onUpdate |
-| @ignore | field | Exclude from codegen |
-| @@id([fields]) | model | Composite primary key |
-| @@unique([fields]) | model | Composite unique |
-| @@index([fields]) | model | Database index |
-| @@map("name") | model | Database table name |
+| PRIMARY KEY | field | Primary key |
+| AUTOINCREMENT | field | Auto-increment |
+| UNIQUE | field | Unique constraint |
+| DEFAULT value | field | Default value (literal, now(), uuid(), cuid()) |
+| FOREIGN KEY (col) REFERENCES Model (col) | model | Foreign key with optional ON DELETE/ON UPDATE |
+| INDEX (col1, col2, ...) | model | Database index |
+| MAP "name" | model | Database table name |
 
 ## SQL Injection Prevention
 
@@ -251,7 +249,7 @@ The ADBC layer (`arrow-adbc-rs` submodule) provides:
 
 ```bash
 cargo build --workspace
-cargo test --workspace          # 380 tests
+cargo test --workspace          # 407 tests
 cargo clippy --all-targets -- -D warnings
 ```
 

@@ -26,40 +26,36 @@ enum PostStatus {
 }
 
 model Author {
-    id       Int32    @id @autoincrement
-    email    Utf8     @unique
+    id       Int32    PRIMARY KEY AUTOINCREMENT
+    email    Utf8     UNIQUE
     name     Utf8
     bio      Utf8?
 
-    posts    Post[]   @relation
-
-    @@index([email])
-    @@map("authors")
+    INDEX (email)
+    MAP "authors"
 }
 
 model Post {
-    id        Int32       @id @autoincrement
+    id        Int32       PRIMARY KEY AUTOINCREMENT
     title     Utf8
     content   LargeUtf8?
-    status    PostStatus  @default(Draft)
-    views     UInt32      @default(0)
+    status    PostStatus  DEFAULT Draft
+    views     UInt32      DEFAULT 0
     authorId  Int32
-    author    Author      @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-    tags      Tag[]       @relation
-
-    @@index([authorId])
-    @@index([status])
-    @@map("posts")
+    FOREIGN KEY (authorId) REFERENCES Author (id) ON DELETE CASCADE
+    INDEX (authorId)
+    INDEX (status)
+    MAP "posts"
 }
 
 model Tag {
-    id     Int32  @id @autoincrement
-    name   Utf8   @unique
+    id     Int32  PRIMARY KEY AUTOINCREMENT
+    name   Utf8   UNIQUE
     postId Int32
-    post   Post   @relation(fields: [postId], references: [id])
 
-    @@map("tags")
+    FOREIGN KEY (postId) REFERENCES Post (id)
+    MAP "tags"
 }
 ```
 
@@ -158,9 +154,9 @@ Add dependencies to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-quiver-query = { path = "../quiver/quiver-query" }
-quiver-driver-core = { path = "../quiver/quiver-driver-core" }
-quiver-driver-sqlite = { path = "../quiver/quiver-driver-sqlite" }
+quiver-query = { git = "https://github.com/Shuozeli/quiver-orm.git", branch = "main" }
+quiver-driver-core = { git = "https://github.com/Shuozeli/quiver-orm.git", branch = "main" }
+quiver-driver-sqlite = { git = "https://github.com/Shuozeli/quiver-orm.git", branch = "main" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -271,7 +267,7 @@ quiver migrate apply blog.quiver
 quiver migrate status blog.quiver
 ```
 
-Now add a field to your schema (add `featured Boolean @default(false)` to Post),
+Now add a field to your schema (add `featured Boolean DEFAULT false` to Post),
 then create a new migration:
 
 ```bash
@@ -389,6 +385,5 @@ What you built:
 ## Next Steps
 
 - Read the [usage guide](usage.md) for complete API reference
-- Explore the [design document](../../docs/design-quiver.md) for architecture details
 - Look at `quiver-e2e/src/lib.rs` for more query examples
 - Look at `quiver-query/tests/sqlite_integration.rs` for integration test patterns
