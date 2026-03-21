@@ -1,4 +1,6 @@
-use crate::helpers::{has_default, is_auto_field, to_screaming_snake, to_snake};
+use crate::helpers::{
+    has_default, is_auto_field, is_collection_base_type, to_screaming_snake, to_snake,
+};
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
@@ -204,10 +206,7 @@ fn base_type_to_proto(base: &BaseType) -> String {
 }
 
 fn is_collection_type(base: &BaseType) -> bool {
-    matches!(
-        base,
-        BaseType::List(_) | BaseType::LargeList(_) | BaseType::Map { .. }
-    )
+    is_collection_base_type(base)
 }
 
 #[cfg(test)]

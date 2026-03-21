@@ -103,7 +103,7 @@ fn gen_create_table(
                 .models
                 .iter()
                 .find(|mm| mm.name == *references_model)
-                .map(model_table_name)
+                .map(table_name_for)
                 .unwrap_or_else(|| references_model.clone());
             let fk_cols: Vec<String> = fields.iter().map(|f| format!("\"{}\"", f)).collect();
             let ref_cols: Vec<String> = references_columns
@@ -174,10 +174,6 @@ fn table_name_for(m: &ModelDef) -> String {
         }
     }
     m.name.clone()
-}
-
-fn model_table_name(m: &ModelDef) -> String {
-    table_name_for(m)
 }
 
 fn column_name_for(f: &FieldDef) -> String {

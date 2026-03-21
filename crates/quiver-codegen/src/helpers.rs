@@ -1,4 +1,4 @@
-use quiver_schema::ast::{FieldAttribute, FieldDef};
+use quiver_schema::ast::{BaseType, FieldAttribute, FieldDef};
 
 pub fn is_auto_field(f: &FieldDef) -> bool {
     f.attributes
@@ -25,4 +25,12 @@ pub fn to_snake(name: &str) -> String {
 
 pub fn to_screaming_snake(name: &str) -> String {
     to_snake(name).to_uppercase()
+}
+
+/// Returns true if the base type is a collection (List, LargeList, Map).
+pub fn is_collection_base_type(base: &BaseType) -> bool {
+    matches!(
+        base,
+        BaseType::List(_) | BaseType::LargeList(_) | BaseType::Map { .. }
+    )
 }

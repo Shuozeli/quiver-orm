@@ -1,4 +1,6 @@
-use crate::helpers::{has_default, is_auto_field, to_screaming_snake, to_snake};
+use crate::helpers::{
+    has_default, is_auto_field, is_collection_base_type, to_screaming_snake, to_snake,
+};
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
@@ -574,10 +576,7 @@ fn classify_filter_type(type_expr: &TypeExpr, schema: &Schema) -> FilterType {
 }
 
 fn is_collection_type(type_expr: &TypeExpr, _schema: &Schema) -> bool {
-    matches!(
-        type_expr.base,
-        BaseType::List(_) | BaseType::LargeList(_) | BaseType::Map { .. } | BaseType::Struct(_)
-    )
+    is_collection_base_type(&type_expr.base) || matches!(type_expr.base, BaseType::Struct(_))
 }
 
 fn type_to_value_input(type_expr: &TypeExpr, schema: &Schema) -> String {
