@@ -220,7 +220,7 @@ fn defaults_equal(a: &FieldDef, b: &FieldDef) -> bool {
 /// Extract named indexes from model attributes.
 fn extract_indexes(m: &ModelDef) -> std::collections::HashMap<String, Vec<String>> {
     let mut indexes = std::collections::HashMap::new();
-    let table_name = get_table_name(m);
+    let table_name = m.table_name();
 
     for attr in &m.attributes {
         if let ModelAttribute::Index(cols) = attr {
@@ -229,15 +229,6 @@ fn extract_indexes(m: &ModelDef) -> std::collections::HashMap<String, Vec<String
         }
     }
     indexes
-}
-
-fn get_table_name(m: &ModelDef) -> &str {
-    for attr in &m.attributes {
-        if let ModelAttribute::Map(name) = attr {
-            return name;
-        }
-    }
-    &m.name
 }
 
 #[cfg(test)]

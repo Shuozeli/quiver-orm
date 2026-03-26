@@ -49,6 +49,21 @@ pub struct ModelDef {
     pub span: Span,
 }
 
+impl ModelDef {
+    /// Return the SQL table name for this model.
+    ///
+    /// If a `MAP` attribute is present, returns the mapped name.
+    /// Otherwise returns the model name.
+    pub fn table_name(&self) -> &str {
+        for attr in &self.attributes {
+            if let ModelAttribute::Map(name) = attr {
+                return name;
+            }
+        }
+        &self.name
+    }
+}
+
 /// A single field in a model.
 #[derive(Debug, Clone)]
 pub struct FieldDef {
@@ -56,6 +71,21 @@ pub struct FieldDef {
     pub type_expr: TypeExpr,
     pub attributes: Vec<FieldAttribute>,
     pub span: Span,
+}
+
+impl FieldDef {
+    /// Return the SQL column name for this field.
+    ///
+    /// If a `MAP` attribute is present, returns the mapped name.
+    /// Otherwise returns the field name.
+    pub fn column_name(&self) -> &str {
+        for attr in &self.attributes {
+            if let FieldAttribute::Map(name) = attr {
+                return name;
+            }
+        }
+        &self.name
+    }
 }
 
 /// Type expression with nullability.

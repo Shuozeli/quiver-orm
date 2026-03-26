@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// A database value that can be sent as a parameter or received in a result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,7 +130,7 @@ impl<T: Into<Value>> From<Option<T>> for Value {
 /// A single row from a query result.
 #[derive(Debug, Clone)]
 pub struct Row {
-    pub column_names: Vec<String>,
+    pub column_names: Arc<Vec<String>>,
     pub values: Vec<Value>,
 }
 
@@ -366,7 +367,7 @@ mod tests {
     #[test]
     fn row_access() {
         let row = Row {
-            column_names: vec!["id".into(), "name".into()],
+            column_names: Arc::new(vec!["id".into(), "name".into()]),
             values: vec![Value::Int(1), Value::Text("Alice".into())],
         };
         assert_eq!(row.get_i64(0), Some(1));

@@ -13,6 +13,18 @@ pub struct ProtoGenerator;
 
 impl ProtoGenerator {
     pub fn generate(schema: &Schema, package: &str) -> Result<String, QuiverError> {
+        // Struct types are not yet supported in Proto codegen.
+        for m in &schema.models {
+            for f in &m.fields {
+                if matches!(f.type_expr.base, BaseType::Struct(_)) {
+                    return Err(QuiverError::Codegen(format!(
+                        "Struct types are not yet supported in Proto codegen (field '{}' in model '{}')",
+                        f.name, m.name
+                    )));
+                }
+            }
+        }
+
         let mut out = String::new();
 
         out.push_str("syntax = \"proto3\";\n\n");

@@ -14,6 +14,7 @@ categories = ["database"]
 quiver-error = { workspace = true }
 adbc = { workspace = true }
 arrow-array = { workspace = true }
+arrow-buffer = { workspace = true }
 arrow-schema = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

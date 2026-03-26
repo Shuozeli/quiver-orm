@@ -11,6 +11,18 @@ pub struct FbsGenerator;
 
 impl FbsGenerator {
     pub fn generate(schema: &Schema, namespace: &str) -> Result<String, QuiverError> {
+        // Struct types are not yet supported in FBS codegen.
+        for m in &schema.models {
+            for f in &m.fields {
+                if matches!(f.type_expr.base, BaseType::Struct(_)) {
+                    return Err(QuiverError::Codegen(format!(
+                        "Struct types are not yet supported in FBS codegen (field '{}' in model '{}')",
+                        f.name, m.name
+                    )));
+                }
+            }
+        }
+
         let mut out = String::new();
 
         out.push_str(&format!("namespace {namespace};\n\n"));
@@ -138,11 +150,10 @@ fn base_type_to_fbs(base: &BaseType) -> String {
                 base_type_to_fbs(&value.base)
             )
         }
-        BaseType::Struct(fields) => {
-            // Inline struct -- for now emit as table name reference
-            // TODO: generate separate struct definition
-            let _ = fields;
-            "string".into() // fallback: JSON string
+        BaseType::Struct(_) => {
+            // Struct types are rejected upfront in generate(); this arm is
+            // unreachable during normal codegen but kept for completeness.
+            "string".into()
         }
         BaseType::Named(name) => name.clone(),
     }

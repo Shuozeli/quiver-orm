@@ -40,7 +40,7 @@ impl RustClientGenerator {
 
 fn gen_model_module(out: &mut String, m: &ModelDef, schema: &Schema) {
     let mod_name = to_snake(&m.name);
-    let table_name = get_table_name(m);
+    let table_name = m.table_name().to_string();
 
     out.push_str(&format!("pub mod {} {{\n", mod_name));
     out.push_str("    use super::*;\n\n");
@@ -447,7 +447,7 @@ fn gen_relation_defs(out: &mut String, m: &ModelDef, schema: &Schema) {
 }
 
 fn gen_create_data(out: &mut String, m: &ModelDef, schema: &Schema) {
-    let table_name = get_table_name(m);
+    let table_name = m.table_name().to_string();
 
     out.push_str("    #[derive(Debug, Clone)]\n");
     out.push_str("    pub struct CreateData {\n");
@@ -508,7 +508,7 @@ fn gen_create_data(out: &mut String, m: &ModelDef, schema: &Schema) {
 }
 
 fn gen_update_data(out: &mut String, m: &ModelDef, schema: &Schema) {
-    let table_name = get_table_name(m);
+    let table_name = m.table_name().to_string();
 
     out.push_str("    #[derive(Debug, Clone, Default)]\n");
     out.push_str("    pub struct UpdateData {\n");
@@ -609,15 +609,6 @@ fn type_to_value_input(type_expr: &TypeExpr, schema: &Schema) -> String {
             "String".into()
         } // JSON serialized
     }
-}
-
-fn get_table_name(m: &ModelDef) -> String {
-    for attr in &m.attributes {
-        if let ModelAttribute::Map(name) = attr {
-            return name.clone();
-        }
-    }
-    m.name.clone()
 }
 
 #[cfg(test)]

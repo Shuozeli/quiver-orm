@@ -5,7 +5,8 @@
 
 use arrow_array::RecordBatch;
 use arrow_array::array::*;
-use arrow_schema::{DataType, Field, Schema};
+use arrow_array::temporal_conversions;
+use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use quiver_error::QuiverError;
 use std::sync::Arc;
 
@@ -19,7 +20,8 @@ pub fn record_batch_to_rows(batch: &RecordBatch) -> Result<Vec<Row>, QuiverError
     let num_cols = batch.num_columns();
     let schema = batch.schema();
 
-    let column_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
+    let column_names: Arc<Vec<String>> =
+        Arc::new(schema.fields().iter().map(|f| f.name().clone()).collect());
 
     let mut rows = Vec::with_capacity(num_rows);
     for row_idx in 0..num_rows {
@@ -29,7 +31,7 @@ pub fn record_batch_to_rows(batch: &RecordBatch) -> Result<Vec<Row>, QuiverError
             values.push(arrow_array_value(array, row_idx)?);
         }
         rows.push(Row {
-            column_names: column_names.clone(),
+            column_names: Arc::clone(&column_names),
             values,
         });
     }
@@ -40,7 +42,7 @@ pub fn record_batch_to_rows(batch: &RecordBatch) -> Result<Vec<Row>, QuiverError
 ///
 /// Infers the Arrow schema from the values in the first row. All rows must
 /// have the same number of columns.
-pub fn rows_to_record_batch(rows: &[Row]) -> Result<RecordBatch, arrow_schema::ArrowError> {
+pub fn rows_to_record_batch(rows: &[Row]) -> Result<RecordBatch, QuiverError> {
     if rows.is_empty() {
         let schema = Schema::empty();
         return Ok(RecordBatch::new_empty(Arc::new(schema)));
@@ -67,10 +69,10 @@ pub fn rows_to_record_batch(rows: &[Row]) -> Result<RecordBatch, arrow_schema::A
     let mut arrays: Vec<Arc<dyn arrow_array::Array>> = Vec::with_capacity(num_cols);
     for col_idx in 0..num_cols {
         let dt = schema.field(col_idx).data_type().clone();
-        arrays.push(build_column_array(&dt, rows, col_idx, num_rows));
+        arrays.push(build_column_array(&dt, rows, col_idx, num_rows)?);
     }
 
-    RecordBatch::try_new(schema, arrays)
+    RecordBatch::try_new(schema, arrays).map_err(|e| QuiverError::Driver(e.to_string()))
 }
 
 /// Convert a slice of `Value`s into a single-row `RecordBatch` for parameter binding.
@@ -172,8 +174,172 @@ fn arrow_array_value(array: &dyn arrow_array::Array, idx: usize) -> Result<Value
                 .value(idx)
                 .to_vec(),
         ),
-        _ => Value::Null, // unsupported types become null
+        DataType::Date32 => {
+            let days = downcast_array!(array, Date32Array, "Date32Array").value(idx);
+            let date = temporal_conversions::date32_to_datetime(days)
+                .ok_or_else(|| QuiverError::Driver(format!("invalid Date32 value: {}", days)))?;
+            Value::Text(date.format("%Y-%m-%d").to_string())
+        }
+        DataType::Date64 => {
+            let ms = downcast_array!(array, Date64Array, "Date64Array").value(idx);
+            let date = temporal_conversions::date64_to_datetime(ms)
+                .ok_or_else(|| QuiverError::Driver(format!("invalid Date64 value: {}", ms)))?;
+            Value::Text(date.format("%Y-%m-%d").to_string())
+        }
+        DataType::Timestamp(unit, _tz) => {
+            let text = match unit {
+                TimeUnit::Second => {
+                    let a = downcast_array!(array, TimestampSecondArray, "TimestampSecondArray");
+                    let dt = temporal_conversions::timestamp_s_to_datetime(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Timestamp(s) value".into()))?;
+                    dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+                }
+                TimeUnit::Millisecond => {
+                    let a = downcast_array!(
+                        array,
+                        TimestampMillisecondArray,
+                        "TimestampMillisecondArray"
+                    );
+                    let dt = temporal_conversions::timestamp_ms_to_datetime(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Timestamp(ms) value".into()))?;
+                    dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+                }
+                TimeUnit::Microsecond => {
+                    let a = downcast_array!(
+                        array,
+                        TimestampMicrosecondArray,
+                        "TimestampMicrosecondArray"
+                    );
+                    let dt = temporal_conversions::timestamp_us_to_datetime(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Timestamp(us) value".into()))?;
+                    dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+                }
+                TimeUnit::Nanosecond => {
+                    let a = downcast_array!(
+                        array,
+                        TimestampNanosecondArray,
+                        "TimestampNanosecondArray"
+                    );
+                    let dt = temporal_conversions::timestamp_ns_to_datetime(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Timestamp(ns) value".into()))?;
+                    dt.format("%Y-%m-%dT%H:%M:%S%.9fZ").to_string()
+                }
+            };
+            Value::Text(text)
+        }
+        DataType::Time32(unit) => {
+            let text = match unit {
+                TimeUnit::Second => {
+                    let a = downcast_array!(array, Time32SecondArray, "Time32SecondArray");
+                    let dt = temporal_conversions::time32s_to_time(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Time32(s) value".into()))?;
+                    dt.format("%H:%M:%S").to_string()
+                }
+                TimeUnit::Millisecond => {
+                    let a =
+                        downcast_array!(array, Time32MillisecondArray, "Time32MillisecondArray");
+                    let dt = temporal_conversions::time32ms_to_time(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Time32(ms) value".into()))?;
+                    dt.format("%H:%M:%S%.3f").to_string()
+                }
+                _ => {
+                    return Err(QuiverError::Driver(format!(
+                        "unsupported Time32 unit: {:?}",
+                        unit
+                    )));
+                }
+            };
+            Value::Text(text)
+        }
+        DataType::Time64(unit) => {
+            let text = match unit {
+                TimeUnit::Microsecond => {
+                    let a =
+                        downcast_array!(array, Time64MicrosecondArray, "Time64MicrosecondArray");
+                    let dt = temporal_conversions::time64us_to_time(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Time64(us) value".into()))?;
+                    dt.format("%H:%M:%S%.6f").to_string()
+                }
+                TimeUnit::Nanosecond => {
+                    let a = downcast_array!(array, Time64NanosecondArray, "Time64NanosecondArray");
+                    let dt = temporal_conversions::time64ns_to_time(a.value(idx))
+                        .ok_or_else(|| QuiverError::Driver("invalid Time64(ns) value".into()))?;
+                    dt.format("%H:%M:%S%.9f").to_string()
+                }
+                _ => {
+                    return Err(QuiverError::Driver(format!(
+                        "unsupported Time64 unit: {:?}",
+                        unit
+                    )));
+                }
+            };
+            Value::Text(text)
+        }
+        DataType::Decimal128(_precision, scale) => {
+            let a = downcast_array!(array, Decimal128Array, "Decimal128Array");
+            let raw = a.value(idx);
+            let text = format_decimal(raw, *scale as i32);
+            Value::Text(text)
+        }
+        DataType::Decimal256(_precision, scale) => {
+            let a = downcast_array!(array, Decimal256Array, "Decimal256Array");
+            let raw = a.value(idx);
+            let text = format_decimal256(raw, *scale as i32);
+            Value::Text(text)
+        }
+        other => {
+            return Err(QuiverError::Driver(format!(
+                "unsupported Arrow type: {:?}",
+                other
+            )));
+        }
     })
+}
+
+/// Format a Decimal128 value (i128 with a scale) into a decimal string.
+fn format_decimal(raw: i128, scale: i32) -> String {
+    if scale <= 0 {
+        return raw.to_string();
+    }
+    let scale = scale as u32;
+    let divisor = 10_i128.pow(scale);
+    let integer_part = raw / divisor;
+    let fractional_part = (raw % divisor).unsigned_abs();
+    format!(
+        "{}.{:0>width$}",
+        integer_part,
+        fractional_part,
+        width = scale as usize
+    )
+}
+
+/// Format a Decimal256 value (i256 with a scale) into a decimal string.
+fn format_decimal256(raw: arrow_buffer::i256, scale: i32) -> String {
+    // Use the arrow Display implementation which handles the scale correctly.
+    // i256 does not support easy arithmetic, so convert to string representation.
+    let s = raw.to_string();
+    if scale <= 0 {
+        return s;
+    }
+    let scale = scale as usize;
+    let is_negative = s.starts_with('-');
+    let digits = if is_negative { &s[1..] } else { &s };
+    if digits.len() <= scale {
+        let padded = format!("{:0>width$}", digits, width = scale + 1);
+        let (int_part, frac_part) = padded.split_at(padded.len() - scale);
+        if is_negative {
+            format!("-{}.{}", int_part, frac_part)
+        } else {
+            format!("{}.{}", int_part, frac_part)
+        }
+    } else {
+        let (int_part, frac_part) = digits.split_at(digits.len() - scale);
+        if is_negative {
+            format!("-{}.{}", int_part, frac_part)
+        } else {
+            format!("{}.{}", int_part, frac_part)
+        }
+    }
 }
 
 fn value_to_arrow_type(val: &Value) -> DataType {
@@ -204,9 +370,9 @@ fn build_column_array(
     dt: &DataType,
     rows: &[Row],
     col_idx: usize,
-    num_rows: usize,
-) -> Arc<dyn arrow_array::Array> {
-    match dt {
+    _num_rows: usize,
+) -> Result<Arc<dyn arrow_array::Array>, QuiverError> {
+    Ok(match dt {
         DataType::Boolean => {
             let vals: Vec<Option<bool>> = rows
                 .iter()
@@ -257,11 +423,13 @@ fn build_column_array(
             let refs: Vec<Option<&[u8]>> = vals.iter().map(|v| v.as_deref()).collect();
             Arc::new(BinaryArray::from_opt_vec(refs))
         }
-        _ => {
-            // Fallback: null array for unsupported types
-            Arc::new(NullArray::new(num_rows))
+        other => {
+            return Err(QuiverError::Driver(format!(
+                "unsupported Arrow type for column array: {:?}",
+                other
+            )));
         }
-    }
+    })
 }
 
 #[cfg(test)]
@@ -270,10 +438,14 @@ mod tests {
 
     #[test]
     fn roundtrip_rows_to_batch_and_back() {
-        let cols = vec!["id".to_string(), "name".to_string(), "score".to_string()];
+        let cols = Arc::new(vec![
+            "id".to_string(),
+            "name".to_string(),
+            "score".to_string(),
+        ]);
         let rows = vec![
             Row {
-                column_names: cols.clone(),
+                column_names: Arc::clone(&cols),
                 values: vec![
                     Value::Int(1),
                     Value::Text("Alice".into()),
@@ -325,7 +497,7 @@ mod tests {
     #[test]
     fn record_batch_with_nulls() {
         let rows = vec![Row {
-            column_names: vec!["id".into(), "name".into()],
+            column_names: Arc::new(vec!["id".into(), "name".into()]),
             values: vec![Value::Int(1), Value::Text("Alice".into())],
         }];
 
@@ -338,7 +510,7 @@ mod tests {
     #[test]
     fn blob_column_roundtrip() {
         let rows = vec![Row {
-            column_names: vec!["data".into()],
+            column_names: Arc::new(vec!["data".into()]),
             values: vec![Value::Blob(vec![0xDE, 0xAD])],
         }];
         let batch = rows_to_record_batch(&rows).unwrap();

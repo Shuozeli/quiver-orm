@@ -82,7 +82,8 @@ fn gen_struct(out: &mut String, m: &ModelDef, schema: &Schema) {
     // becomes "parent_id" in Rust). This preserves the original naming when
     // serializing to JSON. Also triggered by explicit @@map on the model.
     let has_camel_case_fields = m.fields.iter().any(|f| f.name != to_snake(&f.name));
-    if get_map_name(&m.attributes).is_some() || has_camel_case_fields {
+    let has_map_attr = m.table_name() != m.name;
+    if has_map_attr || has_camel_case_fields {
         out.push_str("#[serde(rename_all = \"camelCase\")]\n");
     }
 
@@ -334,15 +335,6 @@ fn base_rust_type(base: &BaseType, schema: &Schema) -> String {
             }
         }
     }
-}
-
-fn get_map_name(attrs: &[ModelAttribute]) -> Option<&str> {
-    for attr in attrs {
-        if let ModelAttribute::Map(name) = attr {
-            return Some(name);
-        }
-    }
-    None
 }
 
 fn get_field_map_name(f: &FieldDef) -> Option<&str> {

@@ -1,14 +1,7 @@
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
 use quiver_schema::ast::*;
-
-/// SQL dialect for DDL generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SqlDialect {
-    Sqlite,
-    Postgres,
-    Mysql,
-}
+pub use quiver_schema::sql_types::{SqlDialect, base_type_to_sql};
 
 /// Generates SQL DDL statements from a Quiver schema.
 pub struct SqlGenerator;
@@ -32,7 +25,7 @@ fn gen_create_table(
     schema: &Schema,
     dialect: SqlDialect,
 ) -> Result<(), QuiverError> {
-    let table_name = table_name_for(m);
+    let table_name = m.table_name();
     out.push_str(&format!(
         "CREATE TABLE IF NOT EXISTS \"{}\" (\n",
         table_name
@@ -43,7 +36,7 @@ fn gen_create_table(
     let mut has_single_pk = false;
 
     for f in &m.fields {
-        let col_name = column_name_for(f);
+        let col_name = f.column_name().to_string();
         let sql_type = base_type_to_sql(&f.type_expr.base, schema, dialect);
         let mut col = format!("  \"{}\" {}", col_name, sql_type);
 
@@ -103,7 +96,7 @@ fn gen_create_table(
                 .models
                 .iter()
                 .find(|mm| mm.name == *references_model)
-                .map(table_name_for)
+                .map(|mm| mm.table_name().to_string())
                 .unwrap_or_else(|| references_model.clone());
             let fk_cols: Vec<String> = fields.iter().map(|f| format!("\"{}\"", f)).collect();
             let ref_cols: Vec<String> = references_columns
@@ -165,160 +158,6 @@ fn gen_create_table(
     }
 
     Ok(())
-}
-
-fn table_name_for(m: &ModelDef) -> String {
-    for attr in &m.attributes {
-        if let ModelAttribute::Map(name) = attr {
-            return name.clone();
-        }
-    }
-    m.name.clone()
-}
-
-fn column_name_for(f: &FieldDef) -> String {
-    for attr in &f.attributes {
-        if let FieldAttribute::Map(name) = attr {
-            return name.clone();
-        }
-    }
-    f.name.clone()
-}
-
-fn base_type_to_sql(base: &BaseType, schema: &Schema, dialect: SqlDialect) -> &'static str {
-    match dialect {
-        SqlDialect::Sqlite => base_type_to_sqlite(base, schema),
-        SqlDialect::Postgres => base_type_to_postgres(base, schema),
-        SqlDialect::Mysql => base_type_to_mysql(base, schema),
-    }
-}
-
-fn base_type_to_sqlite(base: &BaseType, schema: &Schema) -> &'static str {
-    match base {
-        BaseType::Int8
-        | BaseType::Int16
-        | BaseType::Int32
-        | BaseType::Int64
-        | BaseType::UInt8
-        | BaseType::UInt16
-        | BaseType::UInt32
-        | BaseType::UInt64 => "INTEGER",
-
-        BaseType::Float16 | BaseType::Float32 | BaseType::Float64 => "REAL",
-
-        BaseType::Decimal128 { .. } | BaseType::Decimal256 { .. } => "TEXT", // stored as string
-
-        BaseType::Utf8 | BaseType::LargeUtf8 => "TEXT",
-
-        BaseType::Binary | BaseType::LargeBinary | BaseType::FixedSizeBinary { .. } => "BLOB",
-
-        BaseType::Boolean => "INTEGER", // SQLite has no native bool, uses 0/1
-
-        BaseType::Date32 | BaseType::Date64 => "TEXT", // ISO 8601 date strings
-
-        BaseType::Time32 { .. } | BaseType::Time64 { .. } => "TEXT", // ISO 8601 time strings
-
-        BaseType::Timestamp { .. } => "TEXT", // ISO 8601 datetime strings
-
-        BaseType::List(_) | BaseType::LargeList(_) | BaseType::Map { .. } | BaseType::Struct(_) => {
-            "TEXT" // JSON-encoded
-        }
-
-        BaseType::Named(name) => {
-            if schema.enums.iter().any(|e| e.name == *name) {
-                "TEXT" // Enums stored as text
-            } else {
-                "INTEGER" // FK reference
-            }
-        }
-    }
-}
-
-fn base_type_to_postgres(base: &BaseType, schema: &Schema) -> &'static str {
-    match base {
-        BaseType::Int8 | BaseType::Int16 | BaseType::UInt8 | BaseType::UInt16 => "SMALLINT",
-
-        BaseType::Int32 | BaseType::UInt32 => "INTEGER",
-
-        BaseType::Int64 | BaseType::UInt64 => "BIGINT",
-
-        BaseType::Float16 | BaseType::Float32 => "REAL",
-
-        BaseType::Float64 => "DOUBLE PRECISION",
-
-        BaseType::Decimal128 { .. } | BaseType::Decimal256 { .. } => "NUMERIC",
-
-        BaseType::Utf8 | BaseType::LargeUtf8 => "TEXT",
-
-        BaseType::Binary | BaseType::LargeBinary | BaseType::FixedSizeBinary { .. } => "BYTEA",
-
-        BaseType::Boolean => "BOOLEAN",
-
-        BaseType::Date32 | BaseType::Date64 => "DATE",
-
-        BaseType::Time32 { .. } | BaseType::Time64 { .. } => "TIME",
-
-        BaseType::Timestamp { .. } => "TIMESTAMPTZ",
-
-        BaseType::List(_) | BaseType::LargeList(_) | BaseType::Map { .. } | BaseType::Struct(_) => {
-            "JSONB"
-        }
-
-        BaseType::Named(name) => {
-            if schema.enums.iter().any(|e| e.name == *name) {
-                "TEXT"
-            } else {
-                "INTEGER"
-            }
-        }
-    }
-}
-
-fn base_type_to_mysql(base: &BaseType, schema: &Schema) -> &'static str {
-    match base {
-        BaseType::Int8 => "TINYINT",
-        BaseType::Int16 => "SMALLINT",
-        BaseType::Int32 => "INT",
-        BaseType::Int64 => "BIGINT",
-
-        BaseType::UInt8 => "TINYINT UNSIGNED",
-        BaseType::UInt16 => "SMALLINT UNSIGNED",
-        BaseType::UInt32 => "INT UNSIGNED",
-        BaseType::UInt64 => "BIGINT UNSIGNED",
-
-        BaseType::Float16 | BaseType::Float32 => "FLOAT",
-
-        BaseType::Float64 => "DOUBLE",
-
-        BaseType::Decimal128 { .. } | BaseType::Decimal256 { .. } => "DECIMAL(38,18)",
-
-        BaseType::Utf8 => "VARCHAR(255)",
-        BaseType::LargeUtf8 => "TEXT",
-
-        BaseType::Binary => "VARBINARY(255)",
-        BaseType::LargeBinary => "LONGBLOB",
-        BaseType::FixedSizeBinary { .. } => "VARBINARY(255)",
-
-        BaseType::Boolean => "TINYINT(1)",
-
-        BaseType::Date32 | BaseType::Date64 => "DATE",
-
-        BaseType::Time32 { .. } | BaseType::Time64 { .. } => "TIME",
-
-        BaseType::Timestamp { .. } => "DATETIME(6)",
-
-        BaseType::List(_) | BaseType::LargeList(_) | BaseType::Map { .. } | BaseType::Struct(_) => {
-            "JSON"
-        }
-
-        BaseType::Named(name) => {
-            if schema.enums.iter().any(|e| e.name == *name) {
-                "TEXT"
-            } else {
-                "INT"
-            }
-        }
-    }
 }
 
 fn has_attr(f: &FieldDef, pred: impl Fn(&FieldAttribute) -> bool) -> bool {

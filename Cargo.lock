@@ -1388,6 +1388,7 @@ version = "0.1.0"
 dependencies = [
  "adbc",
  "arrow-array",
+ "arrow-buffer",
  "arrow-schema",
  "futures-core",
  "quiver-error",

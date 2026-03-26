@@ -6,7 +6,7 @@
 
 use quiver_error::QuiverError;
 use quiver_schema::Schema;
-use quiver_schema::ast::{FieldAttribute, FieldDef, ModelAttribute, ModelDef};
+use quiver_schema::ast::{FieldDef, ModelDef};
 
 use crate::builder::{
     AggregateBuilder, AggregateFunc, CreateBuilder, CreateManyBuilder, DeleteBuilder,
@@ -33,7 +33,7 @@ impl<'a> SchemaValidator<'a> {
         self.schema
             .models
             .iter()
-            .find(|m| table_name_for(m) == table)
+            .find(|m| m.table_name() == table)
             .ok_or_else(|| {
                 QuiverError::Validation(format!(
                     "unknown table '{}'; available models: {}",
@@ -41,7 +41,7 @@ impl<'a> SchemaValidator<'a> {
                     self.schema
                         .models
                         .iter()
-                        .map(table_name_for)
+                        .map(|m| m.table_name().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 ))
@@ -57,9 +57,13 @@ impl<'a> SchemaValidator<'a> {
         model
             .fields
             .iter()
-            .find(|f| column_name_for(f) == field_name || f.name == field_name)
+            .find(|f| f.column_name() == field_name || f.name == field_name)
             .ok_or_else(|| {
-                let available: Vec<String> = model.fields.iter().map(column_name_for).collect();
+                let available: Vec<String> = model
+                    .fields
+                    .iter()
+                    .map(|f| f.column_name().to_string())
+                    .collect();
                 QuiverError::Validation(format!(
                     "unknown field '{}' on model '{}'; available fields: {}",
                     field_name,
@@ -272,24 +276,6 @@ impl AggregateBuilder {
 }
 
 // --- Helper functions ---
-
-fn table_name_for(m: &ModelDef) -> String {
-    for attr in &m.attributes {
-        if let ModelAttribute::Map(name) = attr {
-            return name.clone();
-        }
-    }
-    m.name.clone()
-}
-
-fn column_name_for(f: &FieldDef) -> String {
-    for attr in &f.attributes {
-        if let FieldAttribute::Map(name) = attr {
-            return name.clone();
-        }
-    }
-    f.name.clone()
-}
 
 #[cfg(test)]
 mod tests {

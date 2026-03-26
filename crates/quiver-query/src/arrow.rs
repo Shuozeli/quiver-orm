@@ -22,7 +22,7 @@ pub async fn query_arrow(
     stmt: &Statement,
 ) -> Result<RecordBatch, QuiverError> {
     let rows = conn.query(stmt).await?;
-    rows_to_record_batch(&rows).map_err(|e| QuiverError::Driver(e.to_string()))
+    rows_to_record_batch(&rows)
 }
 
 #[cfg(test)]
