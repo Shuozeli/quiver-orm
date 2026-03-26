@@ -10,7 +10,6 @@ use quiver_migrate::{
     schema_to_quiver,
 };
 use quiver_schema::Schema;
-use quiver_schema::validate::validate;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -146,16 +145,8 @@ async fn main() {
 
 fn load_schema(path: &Path) -> Result<Schema, QuiverError> {
     let source = std::fs::read_to_string(path).map_err(QuiverError::Io)?;
-    let schema = quiver_schema::parse(&source)?;
-    if let Err(errors) = validate(&schema) {
-        let msg = errors
-            .iter()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        return Err(QuiverError::Validation(msg));
-    }
-    Ok(schema)
+    // parse() already runs validation internally and returns the first error.
+    quiver_schema::parse(&source)
 }
 
 fn resolve_provider(schema: &Schema) -> Result<(&str, &str), QuiverError> {

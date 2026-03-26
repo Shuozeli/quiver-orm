@@ -26,11 +26,11 @@ impl TypeScriptGenerator {
         }
 
         for m in &schema.models {
-            gen_model_interface(&mut out, m, schema);
-            gen_create_input(&mut out, m, schema);
-            gen_update_input(&mut out, m, schema);
-            gen_where_unique_input(&mut out, m, schema);
-            gen_field_constants(&mut out, m, schema);
+            gen_model_interface(&mut out, m);
+            gen_create_input(&mut out, m);
+            gen_update_input(&mut out, m);
+            gen_where_unique_input(&mut out, m);
+            gen_field_constants(&mut out, m);
         }
 
         Ok(out)
@@ -45,10 +45,10 @@ fn gen_enum(out: &mut String, e: &EnumDef) {
     out.push_str("}\n\n");
 }
 
-fn gen_model_interface(out: &mut String, m: &ModelDef, schema: &Schema) {
+fn gen_model_interface(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("export interface {} {{\n", m.name));
     for f in &m.fields {
-        let ts_type = base_type_to_ts(&f.type_expr, schema);
+        let ts_type = base_type_to_ts(&f.type_expr);
         if f.type_expr.nullable {
             out.push_str(&format!("  {}: {} | null;\n", f.name, ts_type));
         } else {
@@ -58,13 +58,13 @@ fn gen_model_interface(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("}\n\n");
 }
 
-fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
+fn gen_create_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("export interface {}CreateInput {{\n", m.name));
     for f in &m.fields {
         if is_auto_field(f) {
             continue;
         }
-        let ts_type = base_type_to_ts(&f.type_expr, schema);
+        let ts_type = base_type_to_ts(&f.type_expr);
         if f.type_expr.nullable || has_default(f) {
             out.push_str(&format!("  {}?: {} | null;\n", f.name, ts_type));
         } else {
@@ -74,13 +74,13 @@ fn gen_create_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("}\n\n");
 }
 
-fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
+fn gen_update_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("export interface {}UpdateInput {{\n", m.name));
     for f in &m.fields {
         if is_auto_field(f) {
             continue;
         }
-        let ts_type = base_type_to_ts(&f.type_expr, schema);
+        let ts_type = base_type_to_ts(&f.type_expr);
         if f.type_expr.nullable {
             out.push_str(&format!("  {}?: {} | null;\n", f.name, ts_type));
         } else {
@@ -90,13 +90,13 @@ fn gen_update_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("}\n\n");
 }
 
-fn gen_where_unique_input(out: &mut String, m: &ModelDef, schema: &Schema) {
+fn gen_where_unique_input(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("export interface {}WhereUniqueInput {{\n", m.name));
     for f in &m.fields {
         if !is_id_field(f) && !is_unique_field(f) {
             continue;
         }
-        let ts_type = base_type_to_ts(&f.type_expr, schema);
+        let ts_type = base_type_to_ts(&f.type_expr);
         if f.type_expr.nullable {
             out.push_str(&format!("  {}?: {} | null;\n", f.name, ts_type));
         } else {
@@ -106,7 +106,7 @@ fn gen_where_unique_input(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("}\n\n");
 }
 
-fn gen_field_constants(out: &mut String, m: &ModelDef, _schema: &Schema) {
+fn gen_field_constants(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("export const {}Fields = {{\n", m.name));
     for f in &m.fields {
         out.push_str(&format!("  {}: \"{}\",\n", f.name, f.name));
@@ -114,8 +114,7 @@ fn gen_field_constants(out: &mut String, m: &ModelDef, _schema: &Schema) {
     out.push_str("} as const;\n\n");
 }
 
-#[allow(clippy::only_used_in_recursion)] // schema needed for nested type resolution
-fn base_type_to_ts(type_expr: &TypeExpr, schema: &Schema) -> String {
+fn base_type_to_ts(type_expr: &TypeExpr) -> String {
     match &type_expr.base {
         // Integers (fit in JS number)
         BaseType::Int8
@@ -152,7 +151,7 @@ fn base_type_to_ts(type_expr: &TypeExpr, schema: &Schema) -> String {
 
         // Nested types
         BaseType::List(inner) | BaseType::LargeList(inner) => {
-            let inner_ts = base_type_to_ts(inner, schema);
+            let inner_ts = base_type_to_ts(inner);
             if inner.nullable {
                 format!("({inner_ts} | null)[]")
             } else {
@@ -161,15 +160,15 @@ fn base_type_to_ts(type_expr: &TypeExpr, schema: &Schema) -> String {
         }
 
         BaseType::Map { key, value } => {
-            let key_ts = base_type_to_ts(key, schema);
-            let value_ts = base_type_to_ts(value, schema);
+            let key_ts = base_type_to_ts(key);
+            let value_ts = base_type_to_ts(value);
             format!("Map<{key_ts}, {value_ts}>")
         }
 
         BaseType::Struct(fields) => {
             let mut parts = Vec::new();
             for sf in fields {
-                let ft = base_type_to_ts(&sf.type_expr, schema);
+                let ft = base_type_to_ts(&sf.type_expr);
                 if sf.type_expr.nullable {
                     parts.push(format!("{}: {} | null", sf.name, ft));
                 } else {

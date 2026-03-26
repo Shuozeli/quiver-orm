@@ -48,7 +48,7 @@ fn gen_model_module(out: &mut String, m: &ModelDef, schema: &Schema) {
     gen_field_constants(out, m);
     gen_query_entry_points(out, &table_name);
     gen_filter_helpers(out, m, schema);
-    gen_order_helpers(out, m, schema);
+    gen_order_helpers(out, m);
     gen_relation_defs(out, m, schema);
     gen_create_data(out, m, schema);
     gen_update_data(out, m, schema);
@@ -291,13 +291,13 @@ fn gen_filter_helpers(out: &mut String, m: &ModelDef, schema: &Schema) {
     out.push_str("    }\n\n");
 }
 
-fn gen_order_helpers(out: &mut String, m: &ModelDef, schema: &Schema) {
+fn gen_order_helpers(out: &mut String, m: &ModelDef) {
     out.push_str("    pub mod order {\n");
     out.push_str("        use super::*;\n\n");
 
     for f in &m.fields {
         // Skip collection types -- can't ORDER BY a list
-        if is_collection_type(&f.type_expr, schema) {
+        if is_collection_type(&f.type_expr) {
             continue;
         }
 
@@ -575,7 +575,7 @@ fn classify_filter_type(type_expr: &TypeExpr, schema: &Schema) -> FilterType {
     }
 }
 
-fn is_collection_type(type_expr: &TypeExpr, _schema: &Schema) -> bool {
+fn is_collection_type(type_expr: &TypeExpr) -> bool {
     is_collection_base_type(&type_expr.base) || matches!(type_expr.base, BaseType::Struct(_))
 }
 

@@ -89,7 +89,7 @@ fn gen_create_input(out: &mut String, m: &ModelDef) {
         if is_auto_field(f) {
             continue;
         }
-        let proto_type = if is_collection_type(&f.type_expr.base) {
+        let proto_type = if is_collection_base_type(&f.type_expr.base) {
             // repeated/map fields can't be optional in proto3
             base_type_to_proto(&f.type_expr.base)
         } else if has_default(f) || f.type_expr.nullable {
@@ -115,7 +115,7 @@ fn gen_update_input(out: &mut String, m: &ModelDef) {
         if is_auto_field(f) {
             continue;
         }
-        if is_collection_type(&f.type_expr.base) {
+        if is_collection_base_type(&f.type_expr.base) {
             // repeated/map fields can't be optional in proto3
             let base = base_type_to_proto(&f.type_expr.base);
             out.push_str(&format!(
@@ -215,10 +215,6 @@ fn base_type_to_proto(base: &BaseType) -> String {
         BaseType::Struct(_) => "bytes".into(), // serialize as bytes for now
         BaseType::Named(name) => name.clone(),
     }
-}
-
-fn is_collection_type(base: &BaseType) -> bool {
-    is_collection_base_type(base)
 }
 
 #[cfg(test)]

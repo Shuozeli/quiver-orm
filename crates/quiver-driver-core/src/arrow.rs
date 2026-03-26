@@ -50,7 +50,6 @@ pub fn rows_to_record_batch(rows: &[Row]) -> Result<RecordBatch, QuiverError> {
 
     let first = &rows[0];
     let num_cols = first.column_names.len();
-    let num_rows = rows.len();
 
     // Infer schema from column names and first-row value types.
     let fields: Vec<Field> = first
@@ -69,7 +68,7 @@ pub fn rows_to_record_batch(rows: &[Row]) -> Result<RecordBatch, QuiverError> {
     let mut arrays: Vec<Arc<dyn arrow_array::Array>> = Vec::with_capacity(num_cols);
     for col_idx in 0..num_cols {
         let dt = schema.field(col_idx).data_type().clone();
-        arrays.push(build_column_array(&dt, rows, col_idx, num_rows)?);
+        arrays.push(build_column_array(&dt, rows, col_idx)?);
     }
 
     RecordBatch::try_new(schema, arrays).map_err(|e| QuiverError::Driver(e.to_string()))
@@ -370,7 +369,6 @@ fn build_column_array(
     dt: &DataType,
     rows: &[Row],
     col_idx: usize,
-    _num_rows: usize,
 ) -> Result<Arc<dyn arrow_array::Array>, QuiverError> {
     Ok(match dt {
         DataType::Boolean => {
