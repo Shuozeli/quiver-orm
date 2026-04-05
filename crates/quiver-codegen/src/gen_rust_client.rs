@@ -26,7 +26,9 @@ impl RustClientGenerator {
         w.line("use quiver_driver_core::Value;");
         w.line("use quiver_query::{Query, BuiltQuery, Filter, Order};");
         w.line("use quiver_query::{FindManyBuilder, FindFirstBuilder, CreateBuilder};");
-        w.line("use quiver_query::{CreateManyBuilder, UpdateBuilder, DeleteBuilder, UpsertBuilder};");
+        w.line(
+            "use quiver_query::{CreateManyBuilder, UpdateBuilder, DeleteBuilder, UpsertBuilder};",
+        );
         w.line("use quiver_query::{AggregateBuilder, RelationDef, RelationType, Include};");
         w.blank();
 
@@ -61,7 +63,10 @@ fn gen_field_constants(w: &mut CodeWriter, m: &ModelDef) {
     w.block("pub mod fields", |w| {
         for f in &m.fields {
             let const_name = to_screaming_snake(&f.name);
-            w.line(&format!("pub const {const_name}: &str = \"{name}\";", name = f.name));
+            w.line(&format!(
+                "pub const {const_name}: &str = \"{name}\";",
+                name = f.name
+            ));
         }
     });
     w.blank();
@@ -69,84 +74,57 @@ fn gen_field_constants(w: &mut CodeWriter, m: &ModelDef) {
 
 fn gen_query_entry_points(w: &mut CodeWriter, table_name: &str) {
     // find_many
-    w.block(
-        &format!("pub fn find_many() -> FindManyBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").find_many()"));
-        },
-    );
+    w.block(&format!("pub fn find_many() -> FindManyBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").find_many()"));
+    });
     w.blank();
 
     // find_first
-    w.block(
-        &format!("pub fn find_first() -> FindFirstBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").find_first()"));
-        },
-    );
+    w.block(&format!("pub fn find_first() -> FindFirstBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").find_first()"));
+    });
     w.blank();
 
     // create
-    w.block(
-        &format!("pub fn create() -> CreateBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").create()"));
-        },
-    );
+    w.block(&format!("pub fn create() -> CreateBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").create()"));
+    });
     w.blank();
 
     // create_many
-    w.block(
-        &format!("pub fn create_many() -> CreateManyBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").create_many()"));
-        },
-    );
+    w.block(&format!("pub fn create_many() -> CreateManyBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").create_many()"));
+    });
     w.blank();
 
     // update
-    w.block(
-        &format!("pub fn update() -> UpdateBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").update()"));
-        },
-    );
+    w.block(&format!("pub fn update() -> UpdateBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").update()"));
+    });
     w.blank();
 
     // update_many
-    w.block(
-        &format!("pub fn update_many() -> UpdateBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").update_many()"));
-        },
-    );
+    w.block(&format!("pub fn update_many() -> UpdateBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").update_many()"));
+    });
     w.blank();
 
     // delete
-    w.block(
-        &format!("pub fn delete() -> DeleteBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").delete()"));
-        },
-    );
+    w.block(&format!("pub fn delete() -> DeleteBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").delete()"));
+    });
     w.blank();
 
     // delete_many
-    w.block(
-        &format!("pub fn delete_many() -> DeleteBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").delete_many()"));
-        },
-    );
+    w.block(&format!("pub fn delete_many() -> DeleteBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").delete_many()"));
+    });
     w.blank();
 
     // aggregate
-    w.block(
-        &format!("pub fn aggregate() -> AggregateBuilder"),
-        |w| {
-            w.line(&format!("Query::table(\"{table_name}\").aggregate()"));
-        },
-    );
+    w.block(&format!("pub fn aggregate() -> AggregateBuilder"), |w| {
+        w.line(&format!("Query::table(\"{table_name}\").aggregate()"));
+    });
     w.blank();
 }
 
@@ -402,8 +380,14 @@ fn gen_relation_defs(w: &mut CodeWriter, m: &ModelDef, schema: &Schema) {
                 |w| {
                     w.block("RelationDef", |w| {
                         w.line(&format!("name: \"{name}\".to_string(),", name = rel.name));
-                        w.line(&format!("from_model: \"{from_model}\".to_string(),", from_model = rel.from_model));
-                        w.line(&format!("to_model: \"{to_model}\".to_string(),", to_model = rel.to_model));
+                        w.line(&format!(
+                            "from_model: \"{from_model}\".to_string(),",
+                            from_model = rel.from_model
+                        ));
+                        w.line(&format!(
+                            "to_model: \"{to_model}\".to_string(),",
+                            to_model = rel.to_model
+                        ));
                         w.line(&format!(
                             "fields: vec![{}],",
                             rel.fields
@@ -462,7 +446,9 @@ fn gen_create_data(w: &mut CodeWriter, m: &ModelDef, schema: &Schema) {
     // impl to_query
     w.block("impl CreateData", |w| {
         w.block("pub fn to_query(&self) -> BuiltQuery", |w| {
-            w.line(&format!("let mut builder = Query::table(\"{table_name}\").create();"));
+            w.line(&format!(
+                "let mut builder = Query::table(\"{table_name}\").create();"
+            ));
             for f in &m.fields {
                 if is_auto_field(f) {
                     continue;
@@ -470,14 +456,15 @@ fn gen_create_data(w: &mut CodeWriter, m: &ModelDef, schema: &Schema) {
                 let field_snake = to_snake(&f.name);
                 let field_name = &f.name;
                 if has_default(f) || f.type_expr.nullable {
-                    w.block(
-                        &format!("if let Some(ref v) = self.{field_snake}"),
-                        |w| {
-                            w.line(&format!("builder = builder.set(\"{field_name}\", v.clone());"));
-                        },
-                    );
+                    w.block(&format!("if let Some(ref v) = self.{field_snake}"), |w| {
+                        w.line(&format!(
+                            "builder = builder.set(\"{field_name}\", v.clone());"
+                        ));
+                    });
                 } else {
-                    w.line(&format!("builder = builder.set(\"{field_name}\", self.{field_snake}.clone());"));
+                    w.line(&format!(
+                        "builder = builder.set(\"{field_name}\", self.{field_snake}.clone());"
+                    ));
                 }
             }
             w.line("builder.build()");
@@ -507,19 +494,20 @@ fn gen_update_data(w: &mut CodeWriter, m: &ModelDef, schema: &Schema) {
         w.block(
             "pub fn to_query(&self, filter: Filter) -> BuiltQuery",
             |w| {
-                w.line(&format!("let mut builder = Query::table(\"{table_name}\").update().filter(filter);"));
+                w.line(&format!(
+                    "let mut builder = Query::table(\"{table_name}\").update().filter(filter);"
+                ));
                 for f in &m.fields {
                     if is_auto_field(f) {
                         continue;
                     }
                     let field_snake = to_snake(&f.name);
                     let field_name = &f.name;
-                    w.block(
-                        &format!("if let Some(ref v) = self.{field_snake}"),
-                        |w| {
-                            w.line(&format!("builder = builder.set(\"{field_name}\", v.clone());"));
-                        },
-                    );
+                    w.block(&format!("if let Some(ref v) = self.{field_snake}"), |w| {
+                        w.line(&format!(
+                            "builder = builder.set(\"{field_name}\", v.clone());"
+                        ));
+                    });
                 }
                 w.line("builder.build()");
             },
