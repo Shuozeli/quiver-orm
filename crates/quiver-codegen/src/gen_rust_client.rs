@@ -74,55 +74,55 @@ fn gen_field_constants(w: &mut CodeWriter, m: &ModelDef) {
 
 fn gen_query_entry_points(w: &mut CodeWriter, table_name: &str) {
     // find_many
-    w.block(&format!("pub fn find_many() -> FindManyBuilder"), |w| {
+    w.block("pub fn find_many() -> FindManyBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").find_many()"));
     });
     w.blank();
 
     // find_first
-    w.block(&format!("pub fn find_first() -> FindFirstBuilder"), |w| {
+    w.block("pub fn find_first() -> FindFirstBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").find_first()"));
     });
     w.blank();
 
     // create
-    w.block(&format!("pub fn create() -> CreateBuilder"), |w| {
+    w.block("pub fn create() -> CreateBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").create()"));
     });
     w.blank();
 
     // create_many
-    w.block(&format!("pub fn create_many() -> CreateManyBuilder"), |w| {
+    w.block("pub fn create_many() -> CreateManyBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").create_many()"));
     });
     w.blank();
 
     // update
-    w.block(&format!("pub fn update() -> UpdateBuilder"), |w| {
+    w.block("pub fn update() -> UpdateBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").update()"));
     });
     w.blank();
 
     // update_many
-    w.block(&format!("pub fn update_many() -> UpdateBuilder"), |w| {
+    w.block("pub fn update_many() -> UpdateBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").update_many()"));
     });
     w.blank();
 
     // delete
-    w.block(&format!("pub fn delete() -> DeleteBuilder"), |w| {
+    w.block("pub fn delete() -> DeleteBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").delete()"));
     });
     w.blank();
 
     // delete_many
-    w.block(&format!("pub fn delete_many() -> DeleteBuilder"), |w| {
+    w.block("pub fn delete_many() -> DeleteBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").delete_many()"));
     });
     w.blank();
 
     // aggregate
-    w.block(&format!("pub fn aggregate() -> AggregateBuilder"), |w| {
+    w.block("pub fn aggregate() -> AggregateBuilder", |w| {
         w.line(&format!("Query::table(\"{table_name}\").aggregate()"));
     });
     w.blank();
