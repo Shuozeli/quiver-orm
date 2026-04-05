@@ -149,19 +149,20 @@ client.transaction(|tx| Box::pin(async move {
 
 ```
 quiver/
-  quiver-schema/           Schema parser, lexer, AST, validation, Arrow type mapping
-  quiver-codegen/          Code generation (FBS, Proto, Rust client, Rust serde, TS, SQL DDL)
-  quiver-query/            Type-safe query builder, pagination, relations, streaming
-  quiver-driver-core/      Dialect trait, generic AdbcConnection<D>, DriverPool<D>,
-                           QuiverClient, Value/Row/RowStream, BoxFuture-based traits
-  quiver-driver-sqlite/    SQLite driver (type alias to AdbcConnection<SqliteDialect>)
-  quiver-driver-postgres/  PostgreSQL driver (type alias to AdbcConnection<PostgresDialect>)
-  quiver-driver-mysql/     MySQL driver (type alias to AdbcConnection<MysqlDialect>)
-  quiver-migrate/          Schema diffing, DDL generation, migration tracking, introspection
-  quiver-e2e/              End-to-end integration tests (SQLite)
-  quiver-cli/              CLI binary (parse, generate, migrate, db)
-  quiver-error/            Shared QuiverError enum with retry detection
-  arrow-adbc-rs/           Git submodule: clean-room ADBC core + drivers
+  crates/
+    quiver-schema/           Schema parser, lexer, AST, validation, Arrow type mapping
+    quiver-codegen/          Code generation (FBS, Proto, Rust client, Rust serde, TS, SQL DDL)
+    quiver-query/            Type-safe query builder, pagination, relations, streaming
+    quiver-driver-core/      Dialect trait, generic AdbcConnection<D>, DriverPool<D>,
+                             QuiverClient, Value/Row/RowStream, BoxFuture-based traits
+    quiver-driver-sqlite/    SQLite driver (type alias to AdbcConnection<SqliteDialect>)
+    quiver-driver-postgres/  PostgreSQL driver (type alias to AdbcConnection<PostgresDialect>)
+    quiver-driver-mysql/     MySQL driver (type alias to AdbcConnection<MysqlDialect>)
+    quiver-migrate/          Schema diffing, DDL generation, migration tracking, introspection
+    quiver-e2e/              End-to-end integration tests (SQLite)
+    quiver-cli/              CLI binary (parse, generate, migrate, db)
+    quiver-error/            Shared QuiverError enum with retry detection
+  arrow-adbc-rs/             Git submodule: clean-room ADBC core + drivers
 ```
 
 ## Type System
@@ -249,7 +250,7 @@ The ADBC layer (`arrow-adbc-rs` submodule) provides:
 
 ```bash
 cargo build --workspace
-cargo test --workspace          # 407 tests
+cargo test --workspace          # 408 tests (389 passing, 19 ignored)
 cargo clippy --all-targets -- -D warnings
 ```
 

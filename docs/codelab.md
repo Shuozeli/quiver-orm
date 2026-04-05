@@ -385,5 +385,5 @@ What you built:
 ## Next Steps
 
 - Read the [usage guide](usage.md) for complete API reference
-- Look at `quiver-e2e/src/lib.rs` for more query examples
-- Look at `quiver-query/tests/sqlite_integration.rs` for integration test patterns
+- Look at `crates/quiver-e2e/src/lib.rs` for more query examples
+- Look at `crates/quiver-query/tests/sqlite_integration.rs` for integration test patterns

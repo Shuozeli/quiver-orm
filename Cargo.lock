@@ -341,6 +341,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e78417baa3b3114dc0e95e7357389a249c4da97c3c2b540700079db6171bfd7"
 
 [[package]]
+name = "codegen-core"
+version = "0.1.0"
+source = "git+https://github.com/shuozeli/codegen-infra.git?branch=master#3578527416c488b9cbd5a19495b615f834dfb77e"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "codegen-writers"
+version = "0.1.0"
+source = "git+https://github.com/shuozeli/codegen-infra.git?branch=master#3578527416c488b9cbd5a19495b615f834dfb77e"
+dependencies = [
+ "codegen-core",
+ "thiserror",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1372,6 +1389,8 @@ dependencies = [
 name = "quiver-codegen"
 version = "0.1.0"
 dependencies = [
+ "codegen-core",
+ "codegen-writers",
  "flatc-rs-codegen",
  "flatc-rs-compiler",
  "flatc-rs-schema",

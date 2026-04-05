@@ -500,11 +500,9 @@ Follow the phased migration in `.claude/rules/quiver-migration.md`:
 
 ### Risk areas
 
-- `.gitmodules` bug blocks git-based dependency resolution
 - `@updatedAt` needs manual handling in every update
 - Self-referential relations (Component -> parent) -- untested
 - Composite unique constraints (`@@unique([a, b])`) -- untested
-- No cursor pagination -- must switch to filter-based
 
 ## Experiment Output (v2 -- Full Run)
 

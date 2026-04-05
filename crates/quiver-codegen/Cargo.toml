@@ -23,3 +23,7 @@ flatc-rs-schema = { workspace = true }
 protoc-rs-analyzer = { workspace = true }
 protoc-rs-codegen = { workspace = true }
 protoc-rs-schema = { workspace = true }
+
+# Code generation infrastructure
+codegen-core = { git = "https://github.com/shuozeli/codegen-infra.git", branch = "master" }
+codegen-writers = { git = "https://github.com/shuozeli/codegen-infra.git", branch = "master" }
