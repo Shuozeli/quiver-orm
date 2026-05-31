@@ -71,13 +71,13 @@ fn check_named_type_refs(
     errors: &mut Vec<QuiverError>,
 ) {
     match &type_expr.base {
-        BaseType::Named(name) => {
-            if !enum_names.contains(name.as_str()) && !model_names.contains(name.as_str()) {
-                errors.push(QuiverError::Validation(format!(
-                    "unknown type '{}' in model '{}'",
-                    name, context_model
-                )));
-            }
+        BaseType::Named(name)
+            if !enum_names.contains(name.as_str()) && !model_names.contains(name.as_str()) =>
+        {
+            errors.push(QuiverError::Validation(format!(
+                "unknown type '{}' in model '{}'",
+                name, context_model
+            )));
         }
         BaseType::List(inner) | BaseType::LargeList(inner) => {
             check_named_type_refs(inner, enum_names, model_names, context_model, errors);
@@ -222,12 +222,10 @@ fn check_type_expr_params(
                 )));
             }
         }
-        BaseType::FixedSizeBinary { size } => {
-            if *size <= 0 {
-                errors.push(QuiverError::Validation(format!(
-                    "field '{field}' in model '{model}': FixedSizeBinary size must be > 0, got {size}"
-                )));
-            }
+        BaseType::FixedSizeBinary { size } if *size <= 0 => {
+            errors.push(QuiverError::Validation(format!(
+                "field '{field}' in model '{model}': FixedSizeBinary size must be > 0, got {size}"
+            )));
         }
         BaseType::List(inner) | BaseType::LargeList(inner) => {
             check_type_expr_params(inner, model, field, errors);

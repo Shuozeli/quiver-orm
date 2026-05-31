@@ -68,8 +68,7 @@ fn gen_enum(out: &mut String, e: &EnumDef) {
 
 fn gen_message(out: &mut String, m: &ModelDef) {
     out.push_str(&format!("message {} {{\n", m.name));
-    let mut field_num = 1;
-    for f in &m.fields {
+    for (field_num, f) in (1..).zip(m.fields.iter()) {
         let proto_type = type_to_proto(&f.type_expr);
         out.push_str(&format!(
             "  {} {} = {};\n",
@@ -77,7 +76,6 @@ fn gen_message(out: &mut String, m: &ModelDef) {
             to_snake(&f.name),
             field_num
         ));
-        field_num += 1;
     }
     out.push_str("}\n\n");
 }

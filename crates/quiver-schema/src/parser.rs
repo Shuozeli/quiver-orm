@@ -150,30 +150,24 @@ impl Parser {
                         attributes.push(self.parse_foreign_key_constraint()?);
                         continue;
                     }
-                    "PRIMARY" => {
+                    "PRIMARY" if self.is_table_primary_key() => {
                         // Table-level PRIMARY KEY (composite) — peek ahead for KEY (
-                        if self.is_table_primary_key() {
-                            attributes.push(self.parse_table_primary_key()?);
-                            continue;
-                        }
+                        attributes.push(self.parse_table_primary_key()?);
+                        continue;
                     }
                     "INDEX" => {
                         attributes.push(self.parse_table_index()?);
                         continue;
                     }
-                    "UNIQUE" => {
+                    "UNIQUE" if self.is_table_unique() => {
                         // Table-level UNIQUE (composite) — peek ahead for (
-                        if self.is_table_unique() {
-                            attributes.push(self.parse_table_unique()?);
-                            continue;
-                        }
+                        attributes.push(self.parse_table_unique()?);
+                        continue;
                     }
-                    "MAP" => {
+                    "MAP" if self.is_table_map() => {
                         // Table-level MAP — peek ahead for string literal
-                        if self.is_table_map() {
-                            attributes.push(self.parse_table_map()?);
-                            continue;
-                        }
+                        attributes.push(self.parse_table_map()?);
+                        continue;
                     }
                     _ => {}
                 }
